@@ -2,6 +2,8 @@
 
 Guidance for Claude Code working in the **Test Ease** repository.
 
+> **Picking up where the last session left off?** Read [`docs/ROADMAP.md`](docs/ROADMAP.md) — current state, the run-readiness punch-list, the product roadmap, and the settled decisions. This repo was just extracted from a monorepo (2026-06-26); the immediate task is making `docker compose up` work.
+
 ## What it is
 
 Test Ease is an autonomous AI QA tool you point at **any** website. A library
