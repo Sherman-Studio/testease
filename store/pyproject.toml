@@ -1,0 +1,67 @@
+[project]
+name = "qa-store"
+version = "0.1.0"
+description = "Shared MongoDB Atlas store for SlyReply Persona QA Agents — owns the slyreply_qa schema (qa_runs + qa_findings). Deliberately light: pymongo only, no Agent SDK."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "pymongo>=4.6",
+    # #1105 — Fernet symmetric encryption for persona credential
+    # passwords. ``cryptography`` is a heavy native dep; lazy-imported
+    # inside qa_store.crypto so processes that never touch credentials
+    # don't pay the cost.
+    "cryptography>=42.0",
+    # Slice 3a of #1006 — the per-tenant fixture catalog is a YAML file
+    # (``fixtures/<tenant>.yaml``). PyYAML is lazy-imported inside
+    # ``qa_store.fixtures.load_fixture_catalog`` so processes that never
+    # touch the discovery loop don't pay the import cost.
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Site Model vector layer (qa_store.embeddings / site_retriever / site_reconciler).
+# Kept OUT of the base deps so the package stays pymongo-light — the providers
+# lazy-import these inside their methods, so `import qa_store[.embeddings]` is
+# safe without the extra. Install `qa-store[vector]` only on the image that
+# actually embeds (the reconciler runtime), which also BAKES the fastembed
+# model in at build time (read-only-root containers can't fetch it at runtime).
+vector = [
+    # DEFAULT local embedding provider (BAAI/bge-small-en-v1.5, 384-d, ONNX) —
+    # in-process, no key, so a self-hosted Test Ease needs no embedding key.
+    "fastembed>=0.3.0",
+    # Opt-in hosted adapter (OpenAIEmbeddingProvider); only used when selected.
+    "openai>=1.40.0",
+]
+dev = [
+    "pytest>=8.0",
+    "mongomock>=4.1",
+    "ruff>=0.6",
+    # The LocalEmbeddingProvider unit + the real-fastembed e2e need the extra,
+    # so the test/dev install pulls it in (base install stays light).
+    "qa-store[vector]",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["qa_store*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+# #1009 — relax line-length in test files. The persona rename (margaret →
+# first-impression-critic, etc.) blew several existing test lines past the
+# 100-char limit; tests stay readable but pre-existing structures can't be
+# re-flowed without churning. Test code, not shipped code.
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E501"]

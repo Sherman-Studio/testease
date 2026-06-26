@@ -1,0 +1,383 @@
+/* Test Ease — "control room" design system (#1822).
+   Dark instrument-panel surfaces, one luminous cyan signal colour for
+   actions, severity as the only loud colour. The ink + brand scales in
+   tailwind.config.js are flipped dark-side-up, so legacy utilities keep
+   their semantic meaning (text-ink-900 = brightest, bg-ink-50 = quietest). */
+
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/sora/600.css';
+@import '@fontsource/sora/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-void text-ink-800 antialiased;
+  }
+  body {
+    @apply font-sans text-sm;
+    background-color: rgb(var(--te-void));
+    /* Atmosphere: a faint cyan bloom up-right + a blueprint dot grid.
+       Both sit far below content contrast — texture, not decoration.
+       Var-driven so the light theme gets its own bloom + dot colours. */
+    background-image:
+      radial-gradient(
+        1100px 700px at 75% -10%,
+        rgb(var(--te-bloom) / 0.06),
+        transparent 60%
+      ),
+      radial-gradient(circle at 1px 1px, rgb(var(--te-grid-dot) / 0.05) 1px, transparent 0);
+    background-size:
+      auto,
+      26px 26px;
+    background-attachment: fixed;
+  }
+  h1 {
+    @apply font-display text-xl font-semibold tracking-tight text-ink-900;
+  }
+  h2 {
+    @apply text-base font-semibold text-ink-900;
+  }
+  h3 {
+    @apply text-sm font-semibold text-ink-800;
+  }
+  a {
+    @apply text-brand-700 hover:underline;
+  }
+  pre {
+    @apply font-mono;
+  }
+  ::selection {
+    @apply bg-brand-300 text-ink-950;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-ink-50;
+  }
+}
+
+@layer components {
+  /* The workhorse surface: a raised card with a hairline top sheen so
+     panels read as lit instruments rather than flat rectangles. */
+  .panel {
+    @apply rounded-lg border border-hairline/[0.07] bg-panel;
+    box-shadow:
+      0 1px 0 rgb(var(--te-hairline) / 0.04) inset,
+      0 10px 28px -16px rgb(2 6 23 / 0.45);
+  }
+  .panel-pad {
+    @apply p-5;
+  }
+
+  /* ── Status lamps ────────────────────────────────────────────────
+     The redesign's signature glyph: a small glowing indicator used on
+     run rows, the live badge, and the launch console. */
+  .lamp {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full bg-ink-400;
+  }
+  .lamp-live {
+    @apply animate-pulse-dot bg-emerald-400;
+    box-shadow: 0 0 8px 1px rgba(52, 211, 153, 0.55);
+  }
+  .lamp-ok {
+    @apply bg-emerald-400/80;
+  }
+  .lamp-fail {
+    @apply bg-red-400;
+    box-shadow: 0 0 6px 0 rgba(248, 113, 113, 0.5);
+  }
+  .lamp-idle {
+    @apply bg-ink-400;
+  }
+
+  /* Legacy shims kept for any straggler view. */
+  .container {
+    @apply mx-auto max-w-7xl p-6;
+  }
+  .muted {
+    @apply text-ink-600;
+  }
+  .error {
+    @apply text-red-400;
+  }
+  .notice {
+    @apply rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300;
+  }
+  .filters {
+    @apply mb-3 flex flex-wrap items-center gap-3 text-xs text-ink-700;
+  }
+  .counts {
+    @apply flex flex-wrap items-center gap-1;
+  }
+  .badge {
+    @apply pill;
+  }
+  .badge.blocker { @apply pill-blocker; }
+  .badge.major   { @apply pill-major; }
+  .badge.minor   { @apply pill-minor; }
+  .badge.nit     { @apply pill-nit; }
+  .badge.status-new,
+  .badge.status-reviewed { @apply pill-status-new; }
+  .badge.status-filed    { @apply pill-status-filed; }
+  .badge.status-dismissed { @apply pill-status-dismissed; }
+  .review-md {
+    @apply prose-qa border-t border-ink-200 pt-2;
+  }
+  .clickable {
+    @apply cursor-pointer transition hover:bg-brand-50/40;
+  }
+  .help {
+    @apply text-xs text-ink-600;
+  }
+
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-ink-300 bg-ink-100 px-3 py-1.5 text-sm font-medium text-ink-800 transition hover:border-ink-400 hover:bg-ink-200 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-brand-600 bg-brand-600 text-ink-50 hover:border-brand-700 hover:bg-brand-700;
+    box-shadow: 0 0 18px -6px rgb(var(--te-brand-600) / 0.55);
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-ink-600 shadow-none hover:bg-ink-100 hover:text-ink-800;
+  }
+  .btn-danger {
+    @apply border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-400 hover:bg-red-500/20;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    @apply w-full rounded-md border border-ink-300 bg-ink-50 px-3 py-1.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+  }
+  .textarea {
+    @apply font-mono text-xs leading-relaxed;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-ink-600;
+  }
+
+  /* Severity is the only loud colour in the system. Each pill carries a
+     faint ring so it stays legible over any panel depth. */
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-full bg-ink-200 px-2 py-0.5 text-xs font-medium text-ink-700;
+  }
+  .pill-blocker {
+    @apply bg-red-500/15 text-red-300 ring-1 ring-inset ring-red-500/30;
+  }
+  .pill-major {
+    @apply bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/30;
+  }
+  .pill-minor {
+    @apply bg-slate-500/20 text-slate-300 ring-1 ring-inset ring-slate-400/30;
+  }
+  .pill-nit {
+    @apply bg-ink-200 text-ink-600 ring-1 ring-inset ring-hairline/5;
+  }
+  .pill-status-new,
+  .pill-status-reviewed {
+    @apply bg-ink-200 text-ink-700;
+  }
+  .pill-status-running,
+  .pill-status-starting {
+    @apply bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-500/30;
+  }
+  .pill-status-filed {
+    @apply bg-emerald-500/15 text-emerald-300;
+  }
+  .pill-status-failed,
+  .pill-status-cancelled {
+    @apply bg-red-500/15 text-red-300;
+  }
+  .pill-status-dismissed {
+    @apply bg-ink-300 text-ink-600;
+  }
+
+  .tint-teal      { @apply bg-teal-500/10 text-teal-300 ring-teal-500/30; }
+  .tint-amber     { @apply bg-amber-500/10 text-amber-300 ring-amber-500/30; }
+  .tint-rose      { @apply bg-rose-500/10 text-rose-300 ring-rose-500/30; }
+  .tint-indigo    { @apply bg-indigo-500/10 text-indigo-300 ring-indigo-500/30; }
+  .tint-emerald   { @apply bg-emerald-500/10 text-emerald-300 ring-emerald-500/30; }
+  .tint-violet    { @apply bg-violet-500/10 text-violet-300 ring-violet-500/30; }
+  .tint-sky       { @apply bg-sky-500/10 text-sky-300 ring-sky-500/30; }
+  .tint-fuchsia   { @apply bg-fuchsia-500/10 text-fuchsia-300 ring-fuchsia-500/30; }
+  .tint-lime      { @apply bg-lime-500/10 text-lime-300 ring-lime-500/30; }
+  .tint-orange    { @apply bg-orange-500/10 text-orange-300 ring-orange-500/30; }
+  .tint-cyan      { @apply bg-cyan-500/10 text-cyan-300 ring-cyan-500/30; }
+  .tint-slate     { @apply bg-slate-500/10 text-slate-300 ring-slate-400/30; }
+
+  .nav-row {
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-ink-600 transition hover:bg-ink-100 hover:text-ink-900;
+  }
+  .nav-row.active {
+    @apply bg-brand-50 text-brand-800;
+    box-shadow: 0 0 0 1px rgb(var(--te-brand-500) / 0.25) inset;
+  }
+  .nav-row:hover {
+    @apply no-underline;
+  }
+  .nav-row-collapsed {
+    @apply justify-center gap-0 px-0;
+  }
+
+  .back-nav {
+    @apply mb-1;
+  }
+  .sibling-nav {
+    @apply mb-3 flex flex-wrap items-center gap-x-2 text-xs text-ink-600;
+  }
+
+  .prose-qa {
+    @apply text-sm leading-relaxed text-ink-800;
+  }
+  .prose-qa h1,
+  .prose-qa h2,
+  .prose-qa h3 {
+    @apply mb-1 mt-3 font-sans text-sm font-semibold normal-case tracking-normal text-ink-900;
+  }
+  .prose-qa p {
+    @apply mb-2;
+  }
+  .prose-qa code {
+    @apply rounded bg-ink-200 px-1 py-0.5 font-mono text-xs text-brand-800;
+  }
+  .prose-qa pre {
+    @apply overflow-x-auto rounded border border-hairline/5 bg-ink-50 p-3 text-xs text-ink-800;
+  }
+  .prose-qa pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+  .prose-qa ul {
+    @apply mb-2 ml-5 list-disc;
+  }
+  .prose-qa ol {
+    @apply mb-2 ml-5 list-decimal;
+  }
+
+  /* ── Sectioned form primitives (#1047) ─────────────────────────── */
+  .section {
+    @apply panel panel-pad mb-4;
+  }
+  .section-head {
+    @apply mb-3 flex flex-wrap items-baseline gap-x-3;
+  }
+  .section-head h4 {
+    @apply m-0 text-sm font-semibold text-ink-900;
+  }
+  .section-sub {
+    @apply m-0 text-xs text-ink-600;
+  }
+  .field-grid {
+    @apply grid gap-x-4 gap-y-3;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+  .field-grid label {
+    @apply flex flex-col gap-1 text-xs font-medium text-ink-700;
+  }
+  .field-grid label.span2 {
+    grid-column: span 2;
+  }
+
+  /* ── Persona picker cards (New Run launch console) ─────────────── */
+  .persona-grid {
+    @apply grid gap-2;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .persona-card {
+    @apply flex items-start gap-2 rounded-md border border-ink-300 bg-ink-100 p-3 text-left transition hover:border-brand-400 hover:bg-brand-50/50;
+  }
+  .persona-card.selected {
+    @apply border-brand-500 bg-brand-50 ring-1 ring-brand-500;
+  }
+  .persona-card .persona-icon {
+    @apply text-lg leading-none;
+  }
+  .persona-card .persona-body {
+    @apply flex flex-1 flex-col gap-0.5 min-w-0;
+  }
+  .persona-card .persona-name {
+    @apply truncate text-sm font-semibold text-ink-900;
+  }
+  .persona-card .persona-arch {
+    @apply text-xs text-ink-600;
+  }
+  .persona-card .persona-chips {
+    @apply mt-1 flex flex-wrap gap-1;
+  }
+  .persona-card .persona-check {
+    @apply mt-0.5 flex h-4 w-4 items-center justify-center text-brand-700;
+  }
+
+  /* ── Slider field ──────────────────────────────────────────────── */
+  .slider-field {
+    @apply flex flex-col gap-2;
+  }
+  .slider-row {
+    @apply flex items-baseline justify-between;
+  }
+  .slider-label {
+    @apply text-xs font-medium uppercase tracking-wide text-ink-600;
+  }
+  .slider-value {
+    @apply font-display text-base font-semibold text-ink-900;
+  }
+  .slider {
+    @apply h-2 w-full appearance-none rounded-full bg-ink-300;
+  }
+  .slider::-webkit-slider-thumb {
+    @apply h-4 w-4 cursor-pointer appearance-none rounded-full bg-brand-600 ring-2 ring-ink-50;
+    box-shadow: 0 0 10px -2px rgb(var(--te-brand-600) / 0.7);
+  }
+  .slider::-moz-range-thumb {
+    @apply h-4 w-4 cursor-pointer rounded-full border-0 bg-brand-600;
+  }
+  .slider-ticks {
+    @apply relative h-5 text-[10px] text-ink-500;
+  }
+  .slider-ticks .tick {
+    @apply absolute flex flex-col items-center;
+    transform: translateX(-50%);
+  }
+  .slider-ticks .tick-mark {
+    @apply -mt-1 h-1.5 w-px bg-ink-400;
+  }
+  .slider-ticks .tick-label {
+    @apply whitespace-nowrap;
+  }
+  .slider-actions {
+    @apply -mt-1;
+  }
+
+  /* ── Sticky launch bar (New Run) ───────────────────────────────── */
+  .cta-bar {
+    @apply sticky bottom-2 z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-hairline/10 p-3;
+    background: rgb(var(--te-panel) / 0.88);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 -8px 30px -18px rgb(2 6 23 / 0.6), 0 1px 0 rgb(var(--te-hairline) / 0.05) inset;
+  }
+  .cta-summary {
+    @apply flex flex-wrap items-baseline gap-2 text-sm;
+  }
+  .cta-summary code {
+    @apply rounded bg-ink-200 px-1.5 py-0.5 font-mono text-xs text-brand-800;
+  }
+  .cta-actions {
+    @apply flex items-center gap-2;
+  }
+  .cta-start {
+    @apply btn btn-primary text-base px-4 py-2 font-display;
+  }
+  .cta-error {
+    @apply w-full text-xs;
+  }
+
+  /* Instrument readout — tabular numerals for token counts, durations
+     and other telemetry so columns of figures align like a console. */
+  .readout {
+    @apply font-mono text-xs tabular-nums text-ink-700;
+  }
+}

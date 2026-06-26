@@ -1,0 +1,31 @@
+# Secrets — never commit
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node / Vite
+node_modules/
+app/web/dist/
+app/web/.vite/
+
+# Playwright
+app/e2e/node_modules/
+app/e2e/test-results/
+app/e2e/playwright-report/
+
+# Local run artifacts
+qa-runs/
+*.log
+
+# OS
+.DS_Store

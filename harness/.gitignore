@@ -1,0 +1,11 @@
+# Run output — reviews + run-summary.json are artifacts, not source.
+qa-runs/
+
+# Python build / env artifacts.
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/

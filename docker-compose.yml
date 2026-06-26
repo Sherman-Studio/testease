@@ -1,0 +1,86 @@
+# Test Ease — local-first stack.
+#
+# `docker compose up` brings up the control-room UI backed by a local
+# Atlas deployment that can run $vectorSearch (the Site Model's vector
+# layer needs it). The harness is on-demand (profile "run") — it's a
+# batch job that drives a browser, not a long-lived service.
+#
+# NOTE (scaffold): the build contexts below point at the repo root and the
+# Dockerfiles still COPY monorepo-relative paths (qa-store/, harness/,
+# review-ui/...). Those COPY paths must be re-pointed at store/ harness/
+# app/ before `docker compose build` succeeds — see README "What's left"
+# and CLAUDE.md. This file is the intended shape, not yet a green build.
+
+services:
+  # ── Local Atlas: the ONLY Mongo here that does $vectorSearch ──────────
+  # mongodb-atlas-local bundles mongod + mongot (the search/vector engine),
+  # so the Site Model's $vectorSearch retrieval works with no cloud Atlas.
+  atlas:
+    image: mongodb/mongodb-atlas-local:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - atlas-data:/data/db
+    healthcheck:
+      # atlas-local is "up" well before mongot is ready to serve vector
+      # queries; this only proves mongod answers. Vector-index readiness is
+      # a separate init step (see README "What's left").
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  # ── Control-room UI (FastAPI + built Vue SPA), one image ──────────────
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      QA_STORE_URL: "mongodb://atlas:27017/?directConnection=true"
+      QA_STORE_DB: "${QA_STORE_DB:-testease}"
+      # GitHub issue-filing is optional locally; findings log internally.
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_REPO: "${GITHUB_REPO:-}"
+      QA_MAILPIT_ADMIN_URL: "http://mailpit:8025"
+    depends_on:
+      atlas:
+        condition: service_healthy
+
+  # ── Persona harness — on-demand batch run, not a service ──────────────
+  # `docker compose run --rm harness` (or `--profile run up harness`).
+  harness:
+    build:
+      context: .
+      dockerfile: harness/Dockerfile
+    profiles: ["run"]
+    environment:
+      QA_STORE_URL: "mongodb://atlas:27017/?directConnection=true"
+      QA_STORE_DB: "${QA_STORE_DB:-testease}"
+      QA_MONGODB_URL: "mongodb://atlas:27017/?directConnection=true"
+      # The flat-price Claude Code subscription token is the PRIMARY
+      # credential. The harness scrubs ANTHROPIC_API_KEY so the `claude`
+      # CLI resolves this OAuth token, not a per-token API key.
+      CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+      QA_LLM_BACKEND: "${QA_LLM_BACKEND:-claude-code}"
+      # Which site this run targets (Site Model is keyed by tenant+target).
+      QA_TARGET_ID: "${QA_TARGET_ID:-}"
+      QA_WEB_BASE_URL: "${QA_WEB_BASE_URL:-}"
+      # Optional: OpenAI embeddings instead of the local fastembed default.
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+    depends_on:
+      atlas:
+        condition: service_healthy
+
+  # ── Mailpit — catch-all SMTP + web inbox for email-flow personas ──────
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["email"]
+    ports:
+      - "8025:8025"   # web UI
+      - "1025:1025"   # SMTP
+
+volumes:
+  atlas-data:

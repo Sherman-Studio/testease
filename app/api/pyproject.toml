@@ -1,0 +1,53 @@
+[project]
+name = "qa-review-api"
+version = "0.1.0"
+description = "FastAPI backend for the SlyReply Persona QA review UI — reads the slyreply_qa store, triages findings, files one GitHub issue per run."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "kubernetes>=29",
+    # Persona Q&A backend (api_ask_persona endpoint) calls Anthropic
+    # directly. qa-agents is installed --no-deps in the review-ui image
+    # so anthropic wouldn't come along as a transitive dep — list it
+    # here so the Q&A path works in deploy. Keep the version floor
+    # loose; the SDK is API-stable for the messages.create surface.
+    "anthropic>=0.39",
+    "qa-store",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "mongomock>=4.1",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["qa_review_api*"]
+
+[tool.uv.sources]
+qa-store = { path = "../../qa-store" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# #1009 — persona-id rename blew several test lines past the 100-char
+# limit. Test code stays readable but the long IDs aren't reformat-able
+# without churn. Production code still capped.
+"tests/**/*.py" = ["E501"]
