@@ -29,3 +29,7 @@ qa-runs/
 
 # OS
 .DS_Store
+
+# Local demo screenshots + their generator (not committed)
+demo-screenshots/
+app/e2e/demo-screenshots.mjs

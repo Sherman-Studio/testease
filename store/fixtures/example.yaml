@@ -1,0 +1,82 @@
+# fixtures/example.yaml — the default EXAMPLE tenant fixture catalog.
+#
+# A per-tenant description of the test fixtures the personas have access
+# to: base URL, mail viewer, payment test cards, seeded accounts,
+# guard-rails, glossary. Copy this to ``fixtures/<your-app>.yaml`` and
+# edit it for the site you're testing — ``qa_store.fixtures.
+# load_fixture_catalog`` parses it (with ``${ENV}`` interpolation for
+# secrets) and the variant generator reads slices of it to branch
+# canonical actions into testable sad-paths.
+#
+# This ships as a SITE-AGNOSTIC example — every value below is a generic
+# placeholder for a fictional "example" SaaS, not any particular product.
+#
+# Schema is additive — new top-level keys can appear without breaking the
+# loader. The loader validates only the small required set documented in
+# ``REQUIRED_CATALOG_KEYS`` (``app``, ``base_url``).
+
+app: example
+base_url: https://app.example.com
+
+# Inboxes the personas can read from (verification codes, password-reset
+# links, transactional email). Web UI + JSON API.
+inboxes:
+  - name: mailpit
+    url: https://app.example.com/mailpit
+    description: |
+      Operator-facing mail viewer. Personas can poll it for verification
+      codes, password-reset links, and other transactional email. Web UI
+      + JSON API.
+
+# Payment + billing fixtures — provider-NEUTRAL shape (keyed by card
+# ``id``, not a processor name) so persona prompts don't bake in a payment
+# provider. The numbers below are widely-recognised public sandbox test
+# cards; replace them with your processor's published test cards. The
+# variant generator keys ``category: billing`` canonical actions off these
+# ids.
+payment_test_cards:
+  - id: valid
+    number: "4242 4242 4242 4242"
+    description: Always succeeds
+  - id: declined-generic
+    number: "4000 0000 0000 0002"
+    description: Card declined — generic decline
+  - id: requires-3ds
+    number: "4000 0027 6000 3184"
+    description: Requires a 3DS authentication challenge
+  - id: insufficient-funds
+    number: "4000 0000 0000 9995"
+    description: Card declined — insufficient funds
+  - id: expired
+    number: "4000 0000 0000 0069"
+    description: Card declined — expired card
+
+# Pre-seeded accounts (admin, demo, etc.). Secrets come from env — never
+# inline. The loader interpolates ``${VAR}`` against ``os.environ`` and
+# leaves an unset var as the literal placeholder so a missing secret is
+# visible rather than silently empty.
+accounts:
+  - id: admin
+    email: ${TESTEASE_ADMIN_EMAIL}
+    password: ${TESTEASE_ADMIN_PASSWORD}
+    role: admin
+    description: Seeded admin account (credentials supplied via env)
+
+# Auth fixtures — well-known bad inputs a well-built signup must reject.
+# The variant generator keys ``category: auth`` actions off these.
+auth_test_inputs:
+  weak_password: "123"
+  duplicate_email: ${TESTEASE_ADMIN_EMAIL}
+  invalid_email: "broken-no-at-sign"
+  disposable_email_domain: "mailinator.com"
+
+# Things the operator wants personas to AVOID touching.
+do_not_touch:
+  - "/admin/users/*/delete"
+  - "POST /api/users/{id}/disable"
+
+# Tenant-specific terminology the personas should adopt. (Example terms —
+# replace with your product's vocabulary.)
+glossary:
+  workspace: "a billing + membership boundary; a user can belong to several"
+  note: "a document that lives inside exactly one workspace"

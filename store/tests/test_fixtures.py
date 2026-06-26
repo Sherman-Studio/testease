@@ -1,7 +1,7 @@
 """Tests for the fixture catalog loader (Slice 3a of #1006).
 
 Two tiers:
-  * TestShippedCatalog — the real ``fixtures/slyreply.yaml`` parses and
+  * TestShippedCatalog — the real ``fixtures/example.yaml`` parses and
     carries the keys the variant generator + harness depend on.
   * TestLoaderContract — env interpolation, required-key validation,
     missing-file + malformed-file errors, against temp YAML files.
@@ -23,41 +23,45 @@ from qa_store.fixtures import (
 
 
 # ---------------------------------------------------------------------------
-# The shipped SlyReply catalog.
+# The shipped, site-agnostic example catalog (the default tenant).
 # ---------------------------------------------------------------------------
 class TestShippedCatalog:
-    def test_slyreply_yaml_parses(self):
-        cat = load_fixture_catalog("slyreply", env={})
+    def test_example_yaml_parses(self):
+        cat = load_fixture_catalog("example", env={})
         assert isinstance(cat, dict)
 
+    def test_default_tenant_is_the_example_catalog(self):
+        # The default tenant arg loads the shipped example — no site name.
+        assert load_fixture_catalog(env={})["app"] == "example"
+
     def test_has_required_keys(self):
-        cat = load_fixture_catalog("slyreply", env={})
+        cat = load_fixture_catalog("example", env={})
         for key in REQUIRED_CATALOG_KEYS:
             assert cat.get(key), f"missing required key {key!r}"
-        assert cat["app"] == "slyreply"
+        assert cat["app"] == "example"
         assert cat["base_url"].startswith("https://")
 
     def test_carries_payment_test_cards_for_billing_variants(self):
-        cat = load_fixture_catalog("slyreply", env={})
+        cat = load_fixture_catalog("example", env={})
         ids = {c["id"] for c in cat["payment_test_cards"]}
-        # The four cards the variant generator branches billing on.
+        # The cards the variant generator branches billing on.
         assert {"valid", "declined-generic", "requires-3ds"} <= ids
 
     def test_carries_auth_inputs_for_auth_variants(self):
-        cat = load_fixture_catalog("slyreply", env={})
+        cat = load_fixture_catalog("example", env={})
         assert "weak_password" in cat["auth_test_inputs"]
         assert "duplicate_email" in cat["auth_test_inputs"]
 
     def test_unset_secret_left_as_literal_placeholder(self):
         # With no env, ${TESTEASE_ADMIN_EMAIL} stays visible rather than
         # collapsing to an empty string.
-        cat = load_fixture_catalog("slyreply", env={})
+        cat = load_fixture_catalog("example", env={})
         admin = next(a for a in cat["accounts"] if a["id"] == "admin")
         assert admin["email"] == "${TESTEASE_ADMIN_EMAIL}"
 
     def test_secret_interpolated_when_env_present(self):
         cat = load_fixture_catalog(
-            "slyreply",
+            "example",
             env={
                 "TESTEASE_ADMIN_EMAIL": "admin@sandbox.test",
                 "TESTEASE_ADMIN_PASSWORD": "s3cr3t",
