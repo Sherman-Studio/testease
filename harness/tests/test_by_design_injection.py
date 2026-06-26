@@ -29,6 +29,7 @@ def _config(**overrides) -> Config:
         mongodb_url="mongodb://x", admin_email="a@x", admin_password="pw",
         sink="file", run_id="t", qa_store_url="mongodb://localhost:27017",
         qa_store_db="testdb", discord_webhook_url="", concurrency=1,
+        target_id="example",
     )
     return dataclasses.replace(base, **overrides) if overrides else base
 
@@ -40,7 +41,7 @@ def _store_with(rows: list[dict]) -> Store:
     return store
 
 
-def _row(entry_id, body, *, kind="by_design", target="slyreply"):
+def _row(entry_id, body, *, kind="by_design", target="example"):
     return {
         "tenant_id": DEFAULT_TENANT, "target_id": target,
         "entry_id": entry_id, "kind": kind, "body": body,
@@ -65,7 +66,7 @@ def test_empty_knowledge_returns_empty_string():
 
 def test_scoped_to_run_target():
     store = _store_with([_row("k1", "another target's note", target="other")])
-    assert load_by_design_block(_config(target_id="slyreply"), store=store) == ""
+    assert load_by_design_block(_config(target_id="example"), store=store) == ""
 
 
 def test_db_error_is_swallowed():

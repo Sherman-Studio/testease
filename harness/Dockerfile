@@ -35,11 +35,11 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# The shared slyreply_qa store package — the AtlasReportSink depends on it.
+# The shared qa_store package — the AtlasReportSink depends on it.
 # Installed first so the harness's `qa-store` dependency resolves locally
-# (it is not published to PyPI). The build context must be `qa-agents/` so
-# both `harness/` and `qa-store/` are reachable; see qa-agents CI wiring.
-COPY qa-store /tmp/qa-store
+# (it is not published to PyPI). The build context is the repo root, so
+# both `harness/` and `store/` are reachable.
+COPY store /tmp/qa-store
 RUN pip install /tmp/qa-store
 
 COPY harness/pyproject.toml harness/README.md ./

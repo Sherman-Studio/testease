@@ -5,22 +5,22 @@
 #   stage 2 (api)  — Python; installs the FastAPI app + the qa-store package,
 #                    copies the built SPA in, runs uvicorn.
 #
-# The image is ghcr.io/mccullya/slyreply-qa-review. CI wiring (the build +
-# push) is deferred to Slice 5; this Dockerfile is the contract.
+# The image serves the control-room API + built SPA. CI wiring (the build +
+# push) is deferred; this Dockerfile is the contract.
 #
-# IMPORTANT: the build context must be the `qa-agents/` directory, because the
-# API depends on the sibling `qa-store/` package:
+# IMPORTANT: the build context must be the repo root, because the API depends
+# on the sibling `store/` (qa-store) package and the harness's personas:
 #
-#   docker build -f qa-agents/review-ui/Dockerfile -t slyreply-qa-review qa-agents
+#   docker build -f app/Dockerfile -t testease-app .
 
 # ---------------------------------------------------------------------------
 # Stage 1 — build the SPA.
 # ---------------------------------------------------------------------------
 FROM node:22-slim AS web
 WORKDIR /web
-COPY review-ui/web/package.json review-ui/web/package-lock.json* ./
+COPY app/web/package.json app/web/package-lock.json* ./
 RUN npm install
-COPY review-ui/web/ ./
+COPY app/web/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------
@@ -35,8 +35,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# The shared slyreply_qa store package (pymongo only — keeps the image light).
-COPY qa-store /tmp/qa-store
+# The shared qa_store package (pymongo only — keeps the image light).
+COPY store /tmp/qa-store
 RUN pip install /tmp/qa-store
 
 # The harness's persona definitions — needed by the qa_personas seed call in
@@ -49,8 +49,8 @@ COPY harness /tmp/qa-agents
 RUN pip install --no-deps /tmp/qa-agents
 
 # The API package itself.
-COPY review-ui/api/pyproject.toml review-ui/api/README.md ./
-COPY review-ui/api/qa_review_api ./qa_review_api
+COPY app/api/pyproject.toml app/api/README.md ./
+COPY app/api/qa_review_api ./qa_review_api
 # Deps are installed explicitly (the package is installed --no-deps) — keep
 # this list in sync with pyproject.toml's [project.dependencies].
 RUN pip install --no-deps . \
