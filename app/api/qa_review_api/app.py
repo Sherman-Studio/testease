@@ -39,6 +39,7 @@ from qa_store import (
     create_scenario,
     delete_persona,
     delete_scenario,
+    ensure_vector_indexes,
     fetch_screenshot,
     get_finding,
     get_persona,
@@ -481,6 +482,17 @@ def create_app(
             _seed_log.getLogger(__name__).info(
                 "qa_personas seed skipped: harness package not on path",
             )
+
+    # Ensure the Site Model $vectorSearch indexes once at startup (idempotent,
+    # best-effort). On a cold atlas-local boot mongot may not be ready yet, in
+    # which case this no-ops and the `vector-init` one-shot (which polls for
+    # readiness) creates them; on a warm deployment this is the only step
+    # needed. Mongomock / plain mongod degrade quietly inside the call.
+    _created_vix = ensure_vector_indexes(store)
+    if _created_vix:
+        _seed_log.getLogger(__name__).info(
+            "vector indexes created at startup: %s", ", ".join(_created_vix),
+        )
 
     # -- API ---------------------------------------------------------------
     @app.get(
