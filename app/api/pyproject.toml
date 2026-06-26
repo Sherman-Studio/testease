@@ -34,7 +34,7 @@ build-backend = "setuptools.build_meta"
 include = ["qa_review_api*"]
 
 [tool.uv.sources]
-qa-store = { path = "../../qa-store" }
+qa-store = { path = "../../store" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -43,7 +43,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-qa-store = { path = "../qa-store" }
+qa-store = { path = "../store" }
 
 [project.scripts]
 qa-agents = "qa_agents.__main__:main"

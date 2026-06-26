@@ -78,9 +78,9 @@ class Config:
     # Site Model target this run is exercising (qa-store site_targets /
     # site_knowledge are keyed by tenant + target_id). The harness loads this
     # target's by-design knowledge and injects it into persona prompts so they
-    # stop re-flagging intentional behaviour. Defaults to "slyreply" (our
-    # dogfood target); set QA_TARGET_ID per target once multi-target lands.
-    target_id: str = "slyreply"
+    # stop re-flagging intentional behaviour. Empty by default (site-agnostic);
+    # set QA_TARGET_ID to the target this run is about.
+    target_id: str = ""
     # #861 — operator-selected mandatory coverage-action ids (qa_store.
     # coverage_catalog) the persona MUST attempt this session. Empty
     # list = pure free-rein run (the original behaviour). Set via
@@ -153,7 +153,7 @@ class Config:
             out_dir=_env("QA_OUT_DIR", "./qa-runs"),
             # Sandbox MongoDB — used by the fair-use override utility
             # (qa_agents.fair_use_override), NOT by the agent loop itself.
-            mongodb_url=_env("QA_MONGODB_URL", "mongodb://mongodb:27017/slyreply"),
+            mongodb_url=_env("QA_MONGODB_URL", "mongodb://localhost:27017/testease"),
             # Admin credentials for the `tomas` persona. He LOGS IN as the
             # seeded sandbox admin rather than signing up fresh. The defaults
             # match the belt-and-braces admin that k8s/sandbox's
@@ -162,15 +162,15 @@ class Config:
             # seed MUST guarantee a loginable admin with these exact values
             # (or these env vars must be overridden to match the real seed) —
             # see README "Persona admin credentials (tomas)".
-            admin_email=_env("QA_ADMIN_EMAIL", "admin@sandbox.slyreply.ai"),
-            admin_password=_env("QA_ADMIN_PASSWORD", "testpass123"),
+            admin_email=_env("QA_ADMIN_EMAIL", ""),
+            admin_password=_env("QA_ADMIN_PASSWORD", ""),
             # Slice 6 — report sink. Defaults to the file sink so a local run
             # needs no MongoDB; the sandbox Job sets QA_SINK=atlas.
             sink=_env("QA_SINK", "file"),
             run_id=_env("QA_RUN_ID", ""),
             qa_store_url=_env("QA_STORE_URL", "mongodb://localhost:27017"),
-            qa_store_db=_env("QA_STORE_DB", "slyreply_qa"),
-            target_id=_env("QA_TARGET_ID", "slyreply"),
+            qa_store_db=_env("QA_STORE_DB", "testease"),
+            target_id=_env("QA_TARGET_ID", ""),
             # Discord run-summary webhook. Carried in qa-agents-secrets in the
             # sandbox; unset locally → discord.post_run_alert is a no-op.
             discord_webhook_url=_env("QA_DISCORD_WEBHOOK_URL", ""),

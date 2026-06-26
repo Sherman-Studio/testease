@@ -23,7 +23,7 @@ class Settings:
     # CronJob the run-trigger endpoint builds Jobs from. The review UI itself
     # lives in a different namespace (slyreply-qa); see runs.py. Defaulted so
     # tests can build Settings without naming them.
-    sandbox_namespace: str = "slyreply-sandbox"
+    sandbox_namespace: str = "qa-sandbox"
     # The single Max-only CronJob the trigger endpoint builds Jobs from.
     # It scrubs ANTHROPIC_API_KEY so every run bills Claude Code Max.
     qa_cronjob_name: str = "qa-agents"
@@ -39,23 +39,23 @@ class Settings:
     # slyreply-qa, Mailpit lives in slyreply-sandbox, so the FQDN form
     # is required. /mailpit webroot per #979.
     mailpit_admin_url: str = (
-        "http://mailpit.slyreply-sandbox.svc.cluster.local:8025/mailpit"
+        "http://mailpit.qa-sandbox.svc.cluster.local:8025/mailpit"
     )
 
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
             qa_store_url=os.environ.get("QA_STORE_URL", "mongodb://localhost:27017"),
-            qa_store_db=os.environ.get("QA_STORE_DB", "slyreply_qa"),
+            qa_store_db=os.environ.get("QA_STORE_DB", "testease"),
             github_token=os.environ.get("GITHUB_TOKEN", ""),
-            github_repo=os.environ.get("GITHUB_REPO", "mccullya/slyreply"),
-            sandbox_namespace=os.environ.get("QA_SANDBOX_NAMESPACE", "slyreply-sandbox"),
+            github_repo=os.environ.get("GITHUB_REPO", ""),
+            sandbox_namespace=os.environ.get("QA_SANDBOX_NAMESPACE", "qa-sandbox"),
             qa_cronjob_name=os.environ.get("QA_CRONJOB_NAME", "qa-agents"),
             qa_claude_code_secret_name=os.environ.get(
                 "QA_CLAUDE_CODE_SECRET_NAME", "qa-claude-code-credentials"
             ),
             mailpit_admin_url=os.environ.get(
                 "QA_MAILPIT_ADMIN_URL",
-                "http://mailpit.slyreply-sandbox.svc.cluster.local:8025/mailpit",
+                "http://mailpit.qa-sandbox.svc.cluster.local:8025/mailpit",
             ),
         )
