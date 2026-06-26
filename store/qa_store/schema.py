@@ -30,11 +30,14 @@ persona is safe.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from pymongo import ASCENDING, DESCENDING, MongoClient
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants.
@@ -270,6 +273,12 @@ def connect(url: str | None = None, db: str | None = None) -> Store:
     client: MongoClient = MongoClient(url)
     store = Store(client=client, db_name=db)
     _ensure_indexes(store)
+    # NB: the Site Model $vectorSearch indexes are NOT ensured here — connect()
+    # is on a hot path (runner.py opens several stores per run) and search-index
+    # admin round-trips don't belong there. They're ensured once at real boot
+    # points instead: the control-room app startup (create_app) and the
+    # deterministic `python -m qa_store.init_vector_indexes` one-shot. See
+    # ensure_vector_indexes.
     return store
 
 
@@ -415,6 +424,105 @@ def _ensure_indexes(store: Store) -> None:
         [("tenant_id", ASCENDING), ("target_id", ASCENDING), ("entry_id", ASCENDING)],
         unique=True, name="tenant_target_entry_unique",
     )
+
+
+# ---------------------------------------------------------------------------
+# Site Model vector ($vectorSearch) indexes.
+# ---------------------------------------------------------------------------
+# Atlas Search vector indexes — distinct from the compound indexes above, which
+# plain mongod creates but can't power $vectorSearch. mongodb-atlas-local
+# bundles mongot, so these run locally with no cloud Atlas.
+#
+# The (collection, index-name, embedded-field) triples MUST stay in lockstep
+# with qa_store.site_retriever (KB_INDEX_NAME / SURFACES_INDEX_NAME +
+# *_EMBEDDED_FIELD). They're duplicated as literals here rather than imported to
+# avoid a schema ←→ site_retriever import cycle (site_retriever imports Store
+# from this module).
+_VECTOR_INDEXES: tuple[tuple[str, str, str], ...] = (
+    ("site_knowledge", "site_knowledge_vector", "body_embedding"),
+    ("site_surfaces", "site_surfaces_vector", "description_embedding"),
+)
+# Filter fields both indexes declare so $vectorSearch can scope per
+# (tenant, target[, kind]) DURING the ANN search — site_retriever builds
+# exactly this filter.
+_VECTOR_FILTER_FIELDS: tuple[str, ...] = ("tenant_id", "target_id", "kind")
+# numDimensions of the DEFAULT (local) embedding model — bge-small is 384-d.
+# Selecting the OpenAI provider (1536-d) means recreating these indexes at the
+# new dimension and re-embedding; see qa_store.embeddings.DEFAULT_EMBEDDING_DIM.
+DEFAULT_VECTOR_DIM = 384
+
+
+def ensure_vector_indexes(store: Store, *, dim: int = DEFAULT_VECTOR_DIM) -> list[str]:
+    """Create the Site Model ``$vectorSearch`` indexes if they're missing.
+
+    Idempotent and **best-effort**: returns the names it actually created (empty
+    if all already exist, or if this deployment has no Atlas Search engine).
+    Safe to call on every boot.
+
+    Requires a deployment with Atlas Search — ``mongodb-atlas-local`` (which
+    bundles mongot) or cloud Atlas. On a plain ``mongod`` or ``mongomock`` the
+    search-index API is absent or rejected; we log and skip rather than raise,
+    because retrieval is enrichment (``site_retriever`` returns ``[]`` on a
+    missing index). The same tolerance covers the window after mongod is
+    healthy but before mongot is ready to accept index creation.
+    """
+    from pymongo.operations import SearchIndexModel  # pymongo ≥4.7 (vectorSearch type)
+
+    def _index_names(coll) -> set[str]:
+        return {ix["name"] for ix in coll.list_search_indexes()}
+
+    created: list[str] = []
+    for attr, index_name, path in _VECTOR_INDEXES:
+        coll = getattr(store, attr)
+        try:
+            existing = _index_names(coll)
+        except Exception:  # noqa: BLE001 — no Atlas Search here / mongot not ready
+            log.info(
+                "vector-index ensure skipped: Atlas Search unavailable "
+                "(plain mongod, mongomock, or mongot not yet ready)"
+            )
+            return created
+        if index_name in existing:
+            continue
+        model = SearchIndexModel(
+            name=index_name,
+            type="vectorSearch",
+            definition={
+                "fields": [
+                    {
+                        "type": "vector",
+                        "path": path,
+                        "numDimensions": dim,
+                        "similarity": "cosine",
+                    },
+                    *(
+                        {"type": "filter", "path": field}
+                        for field in _VECTOR_FILTER_FIELDS
+                    ),
+                ],
+            },
+        )
+        try:
+            coll.create_search_index(model)
+            created.append(index_name)
+            log.info("created vector index %s on %s (dim=%d)", index_name, attr, dim)
+        except Exception:  # noqa: BLE001
+            # A concurrent ensurer (e.g. app startup + the init one-shot both
+            # booting on a cold stack) may have created it between our list and
+            # our create — that's a benign idempotent win, not a failure. Only
+            # warn if the index genuinely isn't there afterwards.
+            try:
+                present = index_name in _index_names(coll)
+            except Exception:  # noqa: BLE001
+                present = False
+            if present:
+                log.debug("vector index %s on %s already created by a peer", index_name, attr)
+            else:
+                log.warning(
+                    "failed to create vector index %s on %s", index_name, attr,
+                    exc_info=True,
+                )
+    return created
 
 
 # ---------------------------------------------------------------------------

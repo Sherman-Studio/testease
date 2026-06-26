@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
-    "pymongo>=4.6",
+    # ≥4.7 for the ``type="vectorSearch"`` SearchIndexModel used by
+    # qa_store.schema.ensure_vector_indexes (the Site Model $vectorSearch
+    # indexes); 4.7 is the release that added the vectorSearch index type.
+    "pymongo>=4.7",
     # #1105 — Fernet symmetric encryption for persona credential
     # passwords. ``cryptography`` is a heavy native dep; lazy-imported
     # inside qa_store.crypto so processes that never touch credentials
