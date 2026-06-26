@@ -16,17 +16,16 @@ the .format() kwargs so any ``{fixture_X}`` placeholder resolves to
 
 Payment fixtures are provider-NEUTRAL (keyed under ``cards``, not a
 provider name) so personas don't bake a payment processor into their
-prompts. SlyReply now uses Revolut (the Stripe→Revolut migration); the
-card numbers below are the real Revolut SANDBOX test cards. Lifecycle
-error states (trialing → past_due → canceled, declines) are driven via
-the QA-only backend hooks (``POST /api/qa/billing/advance``) rather than
-a processor test-clock — Revolut has NO test-clock, and the Revolut
-checkout widget (#1977) isn't built yet, so the harness provisions and
-advances subscriptions deterministically through those endpoints.
+prompts. The default card numbers below are Revolut SANDBOX test cards —
+a worked example set; operators override them per app with their own
+processor's published test cards. Where a processor has no test-clock,
+subscription lifecycle error states (trialing → past_due → canceled,
+declines) can be driven via QA-only backend hooks rather than the
+processor itself.
 
-Slice 3 of #1006 will add a per-tenant YAML editor where operators
+A future slice will add a per-tenant YAML editor where operators
 customise fixtures for their app. This module is the *default* set —
-enough for SlyReply + most generic SaaS apps to work out of the box.
+enough for most generic SaaS apps to work out of the box.
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ DEFAULT_FIXTURES: dict[str, Any] = {
     # ---------------------------------------------------------------
     # Inboxes — webmail viewers personas use to verify signup / reset
     # emails arrived. The operator overrides per-tenant; default is
-    # mailpit at /mailpit (the convention SlyReply uses).
+    # mailpit at /mailpit (a common convention).
     # ---------------------------------------------------------------
     "inboxes": {
         "default": {
@@ -276,7 +275,7 @@ def _interpolate_env(value: Any, env: dict[str, str]) -> Any:
 
 
 def load_fixture_catalog(
-    tenant: str = "slyreply",
+    tenant: str = "example",
     *,
     fixtures_dir: Path | str | None = None,
     env: dict[str, str] | None = None,
