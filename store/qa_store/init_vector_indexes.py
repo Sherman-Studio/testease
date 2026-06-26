@@ -23,6 +23,7 @@ import os
 import sys
 import time
 
+from .embeddings import embedding_dim_for
 from .schema import _VECTOR_INDEXES, connect, ensure_vector_indexes
 
 log = logging.getLogger(__name__)
@@ -61,9 +62,10 @@ def main(argv: list[str] | None = None) -> int:
         log.info("waiting for Atlas Search engine (mongot) to accept indexes…")
         time.sleep(_POLL_INTERVAL_S)
 
-    created = ensure_vector_indexes(store)
+    dim = embedding_dim_for()  # sized to QA_EMBEDDING_PROVIDER
+    created = ensure_vector_indexes(store, dim=dim)
     if created:
-        log.info("created vector indexes: %s", ", ".join(created))
+        log.info("created vector indexes (dim=%d): %s", dim, ", ".join(created))
     else:
         log.info("vector indexes already present — nothing to do")
     return 0

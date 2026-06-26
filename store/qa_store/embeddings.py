@@ -11,8 +11,14 @@ The **default is a LOCAL, no-key model** — ``LocalEmbeddingProvider``
 on CPU, so a self-hosted Test Ease needs no embedding key — only whatever token
 runs the agent. ``OpenAIEmbeddingProvider`` is an opt-in hosted adapter.
 ``MockEmbeddingProvider`` keeps the retriever/reconciler unit-testable without
-a model. The output dimension MUST match ``numDimensions`` on the Atlas indexes
-(infra/atlas-search.tf — 384 for the local default).
+a model.
+
+Selection is **env-driven**: ``make_embedding_provider()`` reads
+``QA_EMBEDDING_PROVIDER`` (``local`` | ``openai`` | ``mock``; default
+``local``). The selected provider's output dimension MUST match
+``numDimensions`` on the Atlas vector indexes — so the index bootstrap sizes
+itself via ``embedding_dim_for()`` rather than a hardcoded 384, keeping the two
+in lockstep when the provider changes.
 
 NOTE (runtime wiring, deferred): whatever image runs the reconciler must have
 the fastembed model **baked into it at build time** (read-only-root containers
@@ -158,3 +164,70 @@ class MockEmbeddingProvider:
                     break
             block = hashlib.sha256(block).digest()
         return out
+
+
+# ---------------------------------------------------------------------------
+# Provider selection — QA_EMBEDDING_PROVIDER (default: local, no key).
+# ---------------------------------------------------------------------------
+# The env name every entry point reads to pick a provider. Default ``local``
+# keeps a self-hosted Test Ease key-free (fastembed runs in-process). The
+# selected provider's dimension MUST match ``numDimensions`` on the Atlas
+# vector indexes, so boot-time index creation sizes itself via
+# ``embedding_dim_for`` (see qa_store.schema.ensure_vector_indexes callers).
+DEFAULT_EMBEDDING_PROVIDER = "local"
+
+# Output dimension per provider — the source of truth the index bootstrap and
+# the reconciler both consult so they can never drift apart.
+_PROVIDER_DIMS: dict[str, int] = {
+    "local": LOCAL_EMBEDDING_DIM,
+    "openai": OPENAI_EMBEDDING_DIM,
+    "mock": DEFAULT_EMBEDDING_DIM,
+}
+
+
+def _selected_provider(provider: str | None) -> str:
+    name = (
+        provider
+        if provider is not None
+        else os.environ.get("QA_EMBEDDING_PROVIDER", DEFAULT_EMBEDDING_PROVIDER)
+    ).strip().lower()
+    if name not in _PROVIDER_DIMS:
+        raise ValueError(
+            f"unknown QA_EMBEDDING_PROVIDER {name!r}; expected one of "
+            f"{', '.join(sorted(_PROVIDER_DIMS))}",
+        )
+    return name
+
+
+def embedding_dim_for(provider: str | None = None) -> int:
+    """The output dimension of the selected provider.
+
+    The Atlas vector indexes must be sized to this (``ensure_vector_indexes``
+    takes ``dim``), so the index bootstrap stays in lockstep with whatever
+    ``QA_EMBEDDING_PROVIDER`` selects. ``provider=None`` reads the env.
+    """
+    return _PROVIDER_DIMS[_selected_provider(provider)]
+
+
+def make_embedding_provider(provider: str | None = None) -> EmbeddingProvider:
+    """Construct the embedding provider selected by ``QA_EMBEDDING_PROVIDER``.
+
+    - ``local`` (DEFAULT) → ``LocalEmbeddingProvider`` (fastembed bge-small,
+      384-d, in-process, **no key**).
+    - ``openai`` → ``OpenAIEmbeddingProvider`` (text-embedding-3-small, 1536-d);
+      needs ``OPENAI_API_KEY`` and the ``qa-store[vector]`` extra. NB: the Atlas
+      indexes must already be 1536-d — switching providers after indexes exist
+      means dropping + recreating them and re-embedding the corpus.
+    - ``mock`` → ``MockEmbeddingProvider`` (deterministic; dev/tests only).
+
+    ``provider=None`` reads the env. Heavy SDKs (fastembed / openai) are
+    imported lazily inside the provider, so this stays cheap until first use.
+    Tests that need to inject a fake model/client construct the provider class
+    directly rather than going through this factory.
+    """
+    name = _selected_provider(provider)
+    if name == "local":
+        return LocalEmbeddingProvider()
+    if name == "openai":
+        return OpenAIEmbeddingProvider()
+    return MockEmbeddingProvider()

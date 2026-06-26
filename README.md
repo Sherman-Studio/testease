@@ -67,8 +67,9 @@ control room is at http://localhost:8000. Remaining follow-ups:
       `settings.py`) are now site-agnostic. Still open: the
       `store/fixtures/slyreply.yaml` dogfood fixture and deeper couplings
       (email domains, the `qa-run-id` pod label) — see `CLAUDE.md` / `docs/ROADMAP.md`.
-- [ ] **Embedding-provider env selector** — provider is chosen in code
-      today; add a `QA_EMBEDDING_PROVIDER` knob so `.env` can pick
-      local vs OpenAI without a code change. (Index dim follows the provider —
-      `ensure_vector_indexes(dim=…)` already takes the dimension.)
+- [x] **Embedding-provider env selector.** `QA_EMBEDDING_PROVIDER`
+      (`local` default / `openai` / `mock`) picks the provider via
+      `qa_store.embeddings.make_embedding_provider()`; the vector-index
+      bootstrap sizes itself to the provider's dimension
+      (`embedding_dim_for()` → 384 local, 1536 OpenAI). Set in `.env`.
 - [ ] **Rename `qa_store` / `qa_agents`** to product-neutral package names.
