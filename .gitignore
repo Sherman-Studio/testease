@@ -30,9 +30,9 @@ qa-runs/
 # OS
 .DS_Store
 
-# Local demo screenshots + their generator (not committed)
+# Local demo screenshots + their generators (not committed)
 demo-screenshots/
-app/e2e/demo-screenshots.mjs
+app/e2e/demo-*.mjs
 
 # setuptools build artifact (uv builds qa-store into here)
 store/build/
