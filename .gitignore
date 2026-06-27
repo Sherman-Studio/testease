@@ -33,3 +33,6 @@ qa-runs/
 # Local demo screenshots + their generator (not committed)
 demo-screenshots/
 app/e2e/demo-screenshots.mjs
+
+# setuptools build artifact (uv builds qa-store into here)
+store/build/
