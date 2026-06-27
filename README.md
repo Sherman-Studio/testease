@@ -48,26 +48,28 @@ renaming them is a follow-up — see `CLAUDE.md`.)
 
 ## What's left to make `docker compose up` actually work
 
-This commit is a **scaffold + code copy**, deliberately not yet runnable.
-The follow-ups:
+`docker compose up` now **builds and serves** (atlas + vector-init + app); the
+control room is at http://localhost:8000. Remaining follow-ups:
 
-- [ ] **Re-point the Dockerfile COPY paths.** Both `app/Dockerfile` and
-      `harness/Dockerfile` still copy monorepo-relative paths (`qa-store/`,
-      `harness/`, `review-ui/...`). They must copy `store/`, `harness/`,
-      `app/...` from the repo-root build context.
-- [ ] **Atlas vector-index init.** mongodb-atlas-local serves `$vectorSearch`,
-      but the Site Model's vector indexes must be created on first boot (an
-      init step / one-shot job that creates the search indexes on
-      `site_surfaces` / `site_knowledge`). The healthcheck only proves `mongod`
-      answers, not that `mongot` is index-ready.
-- [ ] **Harness image is heavy** — it builds the fastembed model, the
-      `claude` CLI, and Playwright + Chromium. Verify the multi-stage build
-      and the baked fastembed cache path (`QA_FASTEMBED_CACHE`) resolve at
-      runtime.
-- [ ] **Cord-cut the remaining slyreply hardcodes** — default `target_id`,
-      `qa_store_db`, admin email, and the `store/fixtures/slyreply.yaml`
-      dogfood fixture (see `CLAUDE.md` "Provenance / cord-cuts").
-- [ ] **Embedding-provider env selector** — provider is chosen in code
-      today; add a `QA_EMBEDDING_PROVIDER` knob so `.env` can pick
-      local vs OpenAI without a code change.
+- [x] **Re-point the Dockerfile COPY paths.** Both Dockerfiles now copy
+      `store/` / `harness/` / `app/...` from the repo-root build context; both
+      images build clean.
+- [x] **Atlas vector-index init.** `qa_store.ensure_vector_indexes` creates the
+      384-d `site_knowledge` / `site_surfaces` `$vectorSearch` indexes. It runs
+      at the app's startup (best-effort) and as the compose `vector-init`
+      one-shot — `python -m qa_store.init_vector_indexes`, which polls until
+      `mongot` is index-ready (the healthcheck only proves `mongod` answers).
+      Idempotent; safe to re-run.
+- [x] **Harness image builds** — the multi-stage image (fastembed model,
+      `claude` CLI, Playwright + Chromium) builds and tags clean.
+- [~] **Cord-cut the remaining slyreply hardcodes** — run-blocking config
+      defaults (`target_id`, `qa_store_db`, admin email, etc. in `config.py` /
+      `settings.py`) are now site-agnostic. Still open: the
+      `store/fixtures/slyreply.yaml` dogfood fixture and deeper couplings
+      (email domains, the `qa-run-id` pod label) — see `CLAUDE.md` / `docs/ROADMAP.md`.
+- [x] **Embedding-provider env selector.** `QA_EMBEDDING_PROVIDER`
+      (`local` default / `openai` / `mock`) picks the provider via
+      `qa_store.embeddings.make_embedding_provider()`; the vector-index
+      bootstrap sizes itself to the provider's dimension
+      (`embedding_dim_for()` → 384 local, 1536 OpenAI). Set in `.env`.
 - [ ] **Rename `qa_store` / `qa_agents`** to product-neutral package names.

@@ -12,10 +12,13 @@ from qa_store.embeddings import (
     DEFAULT_EMBEDDING_DIM,
     DEFAULT_OPENAI_EMBEDDING_MODEL,
     LOCAL_EMBEDDING_DIM,
+    OPENAI_EMBEDDING_DIM,
     EmbeddingProvider,
     LocalEmbeddingProvider,
     MockEmbeddingProvider,
     OpenAIEmbeddingProvider,
+    embedding_dim_for,
+    make_embedding_provider,
 )
 
 
@@ -93,3 +96,55 @@ def test_local_real_model_returns_384d():
     v = LocalEmbeddingProvider().embed("the relay connection pool is exhausted")
     assert len(v) == 384
     assert all(isinstance(x, float) for x in v)
+
+
+# ── Provider selection (QA_EMBEDDING_PROVIDER) ──
+def test_make_provider_defaults_to_local(monkeypatch):
+    """No env set ⇒ the key-free local provider (the product default)."""
+    monkeypatch.delenv("QA_EMBEDDING_PROVIDER", raising=False)
+    assert isinstance(make_embedding_provider(), LocalEmbeddingProvider)
+
+
+def test_make_provider_reads_env(monkeypatch):
+    monkeypatch.setenv("QA_EMBEDDING_PROVIDER", "mock")
+    assert isinstance(make_embedding_provider(), MockEmbeddingProvider)
+
+
+def test_make_provider_routes_to_openai(monkeypatch):
+    """Routing to the OpenAI provider is provable without the openai SDK: its
+    __init__ checks for a key BEFORE the lazy ``import openai``, so selecting it
+    with no key raises the provider's own ValueError — confirming the factory
+    built an OpenAIEmbeddingProvider, not some other one."""
+    monkeypatch.setenv("QA_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="OpenAIEmbeddingProvider needs an OpenAI key"):
+        make_embedding_provider()
+
+
+def test_make_provider_explicit_arg_overrides_env(monkeypatch):
+    monkeypatch.setenv("QA_EMBEDDING_PROVIDER", "openai")
+    # Explicit wins, so no OPENAI_API_KEY needed.
+    assert isinstance(make_embedding_provider("mock"), MockEmbeddingProvider)
+
+
+def test_make_provider_is_case_and_space_insensitive(monkeypatch):
+    monkeypatch.setenv("QA_EMBEDDING_PROVIDER", "  MOCK ")
+    assert isinstance(make_embedding_provider(), MockEmbeddingProvider)
+
+
+def test_make_provider_unknown_raises(monkeypatch):
+    monkeypatch.setenv("QA_EMBEDDING_PROVIDER", "voyage")
+    with pytest.raises(ValueError, match="unknown QA_EMBEDDING_PROVIDER"):
+        make_embedding_provider()
+
+
+def test_embedding_dim_for_tracks_provider(monkeypatch):
+    monkeypatch.delenv("QA_EMBEDDING_PROVIDER", raising=False)
+    assert embedding_dim_for() == LOCAL_EMBEDDING_DIM == 384
+    assert embedding_dim_for("openai") == OPENAI_EMBEDDING_DIM == 1536
+    assert embedding_dim_for("mock") == DEFAULT_EMBEDDING_DIM
+
+
+def test_embedding_dim_for_unknown_raises():
+    with pytest.raises(ValueError, match="unknown QA_EMBEDDING_PROVIDER"):
+        embedding_dim_for("nope")

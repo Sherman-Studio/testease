@@ -31,8 +31,34 @@ services:
       retries: 12
       start_period: 30s
 
+  # ── One-shot: create the Site Model $vectorSearch indexes ─────────────
+  # atlas-local answers mongod pings (the healthcheck above) well before its
+  # bundled mongot is ready to accept search-index admin commands, so the
+  # app's own boot-time ensure (qa_store.connect → ensure_vector_indexes) can
+  # race ahead and no-op on a cold start. This job polls until mongot accepts
+  # indexes, creates the 384-d site_knowledge/site_surfaces vector indexes,
+  # then exits 0 — the deterministic init path. Reuses the app image (it
+  # carries qa_store + pymongo); idempotent, so re-running is a no-op.
+  vector-init:
+    image: testease-app
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    command: ["python", "-m", "qa_store.init_vector_indexes"]
+    environment:
+      QA_STORE_URL: "mongodb://atlas:27017/?directConnection=true"
+      QA_STORE_DB: "${QA_STORE_DB:-testease}"
+      # Sizes the vector indexes to the selected provider's dimension
+      # (local→384, openai→1536). Must match what the harness embeds with.
+      QA_EMBEDDING_PROVIDER: "${QA_EMBEDDING_PROVIDER:-local}"
+    depends_on:
+      atlas:
+        condition: service_healthy
+    restart: on-failure
+
   # ── Control-room UI (FastAPI + built Vue SPA), one image ──────────────
   app:
+    image: testease-app
     build:
       context: .
       dockerfile: app/Dockerfile
@@ -45,6 +71,8 @@ services:
       GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
       GITHUB_REPO: "${GITHUB_REPO:-}"
       QA_MAILPIT_ADMIN_URL: "http://mailpit:8025"
+      # Sizes the startup vector-index ensure to the selected provider.
+      QA_EMBEDDING_PROVIDER: "${QA_EMBEDDING_PROVIDER:-local}"
     depends_on:
       atlas:
         condition: service_healthy
@@ -68,7 +96,10 @@ services:
       # Which site this run targets (Site Model is keyed by tenant+target).
       QA_TARGET_ID: "${QA_TARGET_ID:-}"
       QA_WEB_BASE_URL: "${QA_WEB_BASE_URL:-}"
-      # Optional: OpenAI embeddings instead of the local fastembed default.
+      # Embedding provider (local default, no key | openai). Must match the
+      # dimension the vector indexes were created at (see vector-init).
+      QA_EMBEDDING_PROVIDER: "${QA_EMBEDDING_PROVIDER:-local}"
+      # Needed only when QA_EMBEDDING_PROVIDER=openai.
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     depends_on:
       atlas:
