@@ -148,6 +148,10 @@ _TEST_FLOWS = "test_flows"           # the test plan (replaces hardcoded `flows`
 _SITE_KNOWLEDGE = "site_knowledge"   # by-design/known-issue/guidance (mirrors
                                      # Sherman's knowledge_base shape so the same
                                      # reconciler/retriever generalise later)
+_SITE_SECRETS = "site_secrets"       # the VAULT: encrypted per-target secret
+                                     # values. The Site Model (auth.credential_ref,
+                                     # site_questions) stores only POINTERS into
+                                     # this; raw secrets never live in the model.
 # Allowed enum-ish values, kept narrow on purpose (consistency across rows).
 SITE_AUTH_METHODS = ("none", "form", "magic_link", "oauth")
 SITE_SURFACE_KINDS = ("page", "form", "auth_flow", "api", "entity")
@@ -256,6 +260,14 @@ class Store:
         scoped to a target. Replaces the code-level BY-DESIGN suppressions;
         mirrors Sherman's knowledge_base shape (body + body_embedding)."""
         return self.db[_SITE_KNOWLEDGE]
+
+    @property
+    def site_secrets(self):
+        """``site_secrets`` — the VAULT. One row per stored secret, the value
+        encrypted via ``qa_store.crypto``. Everything else in the Site Model
+        references a secret by a ``credential_ref`` POINTER, never inline;
+        ``qa_store.vault`` is the only module that reads/writes raw values."""
+        return self.db[_SITE_SECRETS]
 
     def close(self) -> None:
         self.client.close()
@@ -424,10 +436,17 @@ def _ensure_indexes(store: Store) -> None:
         [("tenant_id", ASCENDING), ("target_id", ASCENDING), ("entry_id", ASCENDING)],
         unique=True, name="tenant_target_entry_unique",
     )
-
-
-# ---------------------------------------------------------------------------
-# Site Model vector ($vectorSearch) indexes.
+    # ── Vault (site_secrets) — one row per (tenant, target, ref). The unique
+    # compound is the credential_ref's natural key; list_secret_refs reads by
+    # (tenant, target).
+    store.site_secrets.create_index(
+        [("tenant_id", ASCENDING), ("target_id", ASCENDING)],
+        name="tenant_target",
+    )
+    store.site_secrets.create_index(
+        [("tenant_id", ASCENDING), ("target_id", ASCENDING), ("ref", ASCENDING)],
+        unique=True, name="tenant_target_ref_unique",
+    )
 # ---------------------------------------------------------------------------
 # Atlas Search vector indexes — distinct from the compound indexes above, which
 # plain mongod creates but can't power $vectorSearch. mongodb-atlas-local
