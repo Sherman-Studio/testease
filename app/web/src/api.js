@@ -430,3 +430,54 @@ export function deleteSiteKnowledge(entryId, targetId) {
     })
     .then(() => true)
 }
+
+// ---------------------------------------------------------------------------
+// Explorer questionnaire (site_questions) + target onboarding lifecycle.
+//
+// The questionnaire is the product's hinge — consent + config + knowledge
+// elicitation. Secret answers are vaulted server-side; the API never returns a
+// raw secret value (answered secrets carry only a credential_ref pointer).
+// ---------------------------------------------------------------------------
+// Returns { questions, status, lifecycle, lifecycle_states }.
+export function listSiteQuestions(targetId) {
+  return http
+    .get(`/site/targets/${encodeURIComponent(targetId)}/questions`)
+    .then((r) => r.data)
+}
+
+export function createSiteQuestion(targetId, payload) {
+  return http
+    .post(`/site/targets/${encodeURIComponent(targetId)}/questions`, payload)
+    .then((r) => r.data)
+}
+
+export function answerSiteQuestion(targetId, questionId, answer, label = '') {
+  return http
+    .post(
+      `/site/targets/${encodeURIComponent(targetId)}/questions/${encodeURIComponent(questionId)}/answer`,
+      { answer, label },
+    )
+    .then((r) => r.data)
+}
+
+export function skipSiteQuestion(targetId, questionId) {
+  return http
+    .post(
+      `/site/targets/${encodeURIComponent(targetId)}/questions/${encodeURIComponent(questionId)}/skip`,
+    )
+    .then((r) => r.data)
+}
+
+export function deleteSiteQuestion(targetId, questionId) {
+  return http
+    .delete(
+      `/site/targets/${encodeURIComponent(targetId)}/questions/${encodeURIComponent(questionId)}`,
+    )
+    .then(() => true)
+}
+
+export function setTargetLifecycle(targetId, lifecycle) {
+  return http
+    .post(`/site/targets/${encodeURIComponent(targetId)}/lifecycle`, { lifecycle })
+    .then((r) => r.data)
+}
