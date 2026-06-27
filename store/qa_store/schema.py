@@ -152,10 +152,17 @@ _SITE_SECRETS = "site_secrets"       # the VAULT: encrypted per-target secret
                                      # values. The Site Model (auth.credential_ref,
                                      # site_questions) stores only POINTERS into
                                      # this; raw secrets never live in the model.
+_SITE_QUESTIONS = "site_questions"   # the explorer's per-target human
+                                     # questionnaire — one row per question;
+                                     # secret answers are vaulted (credential_ref),
+                                     # never stored inline.
 # Allowed enum-ish values, kept narrow on purpose (consistency across rows).
 SITE_AUTH_METHODS = ("none", "form", "magic_link", "oauth")
 SITE_SURFACE_KINDS = ("page", "form", "auth_flow", "api", "entity")
 SITE_KNOWLEDGE_KINDS = ("by_design", "known_issue", "guidance", "glossary")
+# Questionnaire answer types + per-question status (see qa_store.site_questions).
+SITE_QUESTION_KINDS = ("free_text", "secret", "choice", "boolean", "url", "number")
+SITE_QUESTION_STATUSES = ("open", "answered", "skipped")
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +275,13 @@ class Store:
         references a secret by a ``credential_ref`` POINTER, never inline;
         ``qa_store.vault`` is the only module that reads/writes raw values."""
         return self.db[_SITE_SECRETS]
+
+    @property
+    def site_questions(self):
+        """``site_questions`` — the explorer's per-target questionnaire. One row
+        per question; secret answers are vaulted (the row carries a
+        ``credential_ref``, never the raw value). See ``qa_store.site_questions``."""
+        return self.db[_SITE_QUESTIONS]
 
     def close(self) -> None:
         self.client.close()
@@ -446,6 +460,21 @@ def _ensure_indexes(store: Store) -> None:
     store.site_secrets.create_index(
         [("tenant_id", ASCENDING), ("target_id", ASCENDING), ("ref", ASCENDING)],
         unique=True, name="tenant_target_ref_unique",
+    )
+    # ── Questionnaire (site_questions) — list_questions_by_target reads by
+    # (tenant, target) ordered by (order, question_id); unique question_id
+    # within a target makes the explorer's re-upserts collision-safe.
+    store.site_questions.create_index(
+        [("tenant_id", ASCENDING), ("target_id", ASCENDING)],
+        name="tenant_target",
+    )
+    store.site_questions.create_index(
+        [
+            ("tenant_id", ASCENDING),
+            ("target_id", ASCENDING),
+            ("question_id", ASCENDING),
+        ],
+        unique=True, name="tenant_target_question_unique",
     )
 # ---------------------------------------------------------------------------
 # Atlas Search vector indexes — distinct from the compound indexes above, which

@@ -25,6 +25,20 @@ from pymongo import ASCENDING
 
 from qa_store.schema import DEFAULT_TENANT, Store, _now, _strip_id
 
+# The onboarding lifecycle a target moves through (roadmap §1–2). The explorer
+# and the questionnaire UI drive these transitions; kept as a flat set rather
+# than a strict FSM so an operator can re-explore or jump back without fighting
+# the tool. A freshly-registered target starts at ``registered``.
+LIFECYCLE_STATES = (
+    "registered",        # known to the tool; nothing discovered yet
+    "exploring",         # the explorer is probing for affordances
+    "awaiting-answers",  # a questionnaire exists; waiting on the operator
+    "configured",        # answers in; personas can be configured from them
+    "testing",           # persona runs are happening
+    "re-explore",        # operator asked for another discovery pass
+)
+DEFAULT_LIFECYCLE = "registered"
+
 
 def content_sha(text: str) -> str:
     """sha256 hex of an embeddable field's text — the fingerprint stored in
@@ -63,29 +77,58 @@ def upsert_site_target(
     status: str = "active",
 ) -> dict:
     """Create/replace a target. ``auth.credential_ref`` is a vault/secret
-    POINTER string — never a raw secret."""
-    return _upsert(
-        store.site_targets,
-        {"tenant_id": tenant_id, "target_id": target_id},
+    POINTER string — never a raw secret.
+
+    The onboarding ``lifecycle`` is set on insert only (``$setOnInsert``) so a
+    re-upsert of an existing target never resets its onboarding progress;
+    advance it with :func:`set_target_lifecycle`."""
+    now = _now()
+    key = {"tenant_id": tenant_id, "target_id": target_id}
+    store.site_targets.update_one(
+        key,
         {
-            "base_url": str(base_url).strip(),
-            "display_name": str(display_name or target_id).strip(),
-            "auth": dict(auth or {"method": "none", "credential_ref": None}),
-            "scope": dict(
-                scope
-                or {
-                    "allow_globs": [],
-                    "deny_globs": [],
-                    "max_depth": 3,
-                    "rate_limit": None,
-                },
-            ),
-            "ownership": dict(
-                ownership or {"method": None, "status": "unverified"},
-            ),
-            "status": status,
+            "$set": {
+                "base_url": str(base_url).strip(),
+                "display_name": str(display_name or target_id).strip(),
+                "auth": dict(auth or {"method": "none", "credential_ref": None}),
+                "scope": dict(
+                    scope
+                    or {
+                        "allow_globs": [],
+                        "deny_globs": [],
+                        "max_depth": 3,
+                        "rate_limit": None,
+                    },
+                ),
+                "ownership": dict(
+                    ownership or {"method": None, "status": "unverified"},
+                ),
+                "status": status,
+                "updated_at": now,
+            },
+            "$setOnInsert": {**key, "lifecycle": DEFAULT_LIFECYCLE, "created_at": now},
         },
+        upsert=True,
     )
+    return _strip_id(store.site_targets.find_one(key))
+
+
+def set_target_lifecycle(
+    store: Store, tenant_id: str, target_id: str, lifecycle: str,
+) -> dict | None:
+    """Move a target to a new onboarding ``lifecycle`` state.
+
+    Validates against :data:`LIFECYCLE_STATES` (any state → any state; the
+    explorer/UI own the ordering). Returns the updated target, or ``None`` if
+    the target doesn't exist."""
+    if lifecycle not in LIFECYCLE_STATES:
+        raise ValueError(
+            f"unknown lifecycle {lifecycle!r}; expected one of "
+            f"{', '.join(LIFECYCLE_STATES)}",
+        )
+    if get_site_target(store, tenant_id, target_id) is None:
+        return None
+    return update_site_target(store, tenant_id, target_id, lifecycle=lifecycle)
 
 
 def get_site_target(

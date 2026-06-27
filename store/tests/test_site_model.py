@@ -11,6 +11,7 @@ import pytest
 
 from qa_store.schema import DEFAULT_TENANT, Store
 from qa_store.site_model import (
+    DEFAULT_LIFECYCLE,
     delete_test_flow,
     get_site_knowledge,
     get_site_target,
@@ -19,6 +20,7 @@ from qa_store.site_model import (
     list_knowledge_by_target,
     list_site_targets,
     list_surfaces_by_target,
+    set_target_lifecycle,
     update_site_target,
     upsert_site_knowledge,
     upsert_site_surface,
@@ -83,6 +85,37 @@ def test_update_and_default_auth(store):
     assert t["auth"] == {"method": "none", "credential_ref": None}
     updated = update_site_target(store, DEFAULT_TENANT, "t1", status="paused")
     assert updated["status"] == "paused"
+
+
+# ── target onboarding lifecycle ──
+def test_new_target_starts_registered(store):
+    upsert_site_target(store, target_id="t1", base_url="https://a.example")
+    assert get_site_target(store, DEFAULT_TENANT, "t1")["lifecycle"] == DEFAULT_LIFECYCLE == "registered"
+
+
+def test_set_target_lifecycle_advances(store):
+    upsert_site_target(store, target_id="t1", base_url="https://a.example")
+    out = set_target_lifecycle(store, DEFAULT_TENANT, "t1", "exploring")
+    assert out["lifecycle"] == "exploring"
+    assert get_site_target(store, DEFAULT_TENANT, "t1")["lifecycle"] == "exploring"
+
+
+def test_set_lifecycle_rejects_unknown_state(store):
+    upsert_site_target(store, target_id="t1", base_url="https://a.example")
+    with pytest.raises(ValueError):
+        set_target_lifecycle(store, DEFAULT_TENANT, "t1", "bogus")
+
+
+def test_set_lifecycle_unknown_target_is_none(store):
+    assert set_target_lifecycle(store, DEFAULT_TENANT, "ghost", "exploring") is None
+
+
+def test_re_upsert_preserves_lifecycle(store):
+    upsert_site_target(store, target_id="t1", base_url="https://a.example")
+    set_target_lifecycle(store, DEFAULT_TENANT, "t1", "configured")
+    # The explorer re-registers the target (re-upsert) — lifecycle must survive.
+    upsert_site_target(store, target_id="t1", base_url="https://a.example")
+    assert get_site_target(store, DEFAULT_TENANT, "t1")["lifecycle"] == "configured"
 
 
 # ── (tenant, target) scoping isolation ──
