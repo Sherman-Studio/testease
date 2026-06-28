@@ -14,7 +14,17 @@
             {{ target.base_url }}
           </p>
         </div>
-        <span class="pill text-[10px]">{{ targetId }}</span>
+        <div class="flex shrink-0 items-center gap-2">
+          <span
+            v-if="lifecycle"
+            class="pill text-[10px] uppercase tracking-wide text-brand-700"
+            data-testid="lifecycle-badge"
+            :title="'Onboarding lifecycle'"
+          >
+            {{ lifecycle }}
+          </span>
+          <span class="pill text-[10px]">{{ targetId }}</span>
+        </div>
       </header>
 
       <!-- Surfaces / Flows / Knowledge tabs -->
@@ -85,7 +95,7 @@
       </section>
 
       <!-- Knowledge — curation (add / edit / delete) -->
-      <section v-else>
+      <section v-else-if="tab === 'knowledge'">
         <div class="mb-4 flex items-center justify-between gap-4">
           <p class="text-sm text-ink-600">
             Curated knowledge the testers read before every run — by-design
@@ -192,19 +202,171 @@
           No knowledge curated yet. <button class="text-brand-700 underline" @click="startCreate">Add the first entry</button>.
         </p>
       </section>
+
+      <!-- Questions — the explorer's questionnaire -->
+      <section v-else-if="tab === 'questions'" data-testid="questions-tab">
+        <div class="mb-4">
+          <p class="text-sm text-ink-600">
+            The explorer's questionnaire — what the tool needs from you to test
+            this site (credentials, scope, test data). Secret answers go to the
+            encrypted vault; only a pointer is kept here.
+          </p>
+          <div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-ink-500">
+            <span data-testid="q-rollup">
+              {{ qStatus.answered }}/{{ qStatus.total }} answered<template
+                v-if="qStatus.required_open"
+              >
+                · <span class="text-red-400">{{ qStatus.required_open }} required open</span></template
+              ><template v-if="qStatus.skipped"> · {{ qStatus.skipped }} skipped</template>
+            </span>
+            <span class="flex items-center gap-1.5">
+              <label class="text-ink-500">Lifecycle</label>
+              <select
+                class="select !py-1 text-xs"
+                :value="lifecycle"
+                data-testid="lifecycle-select"
+                @change="changeLifecycle($event.target.value)"
+              >
+                <option v-for="s in lifecycleStates" :key="s" :value="s">{{ s }}</option>
+              </select>
+            </span>
+          </div>
+        </div>
+
+        <div v-if="questionsError" class="mb-3 text-sm text-red-400">
+          {{ questionsError }}
+        </div>
+
+        <div v-if="questions.length">
+          <div v-for="cat in questionCategories" :key="cat" class="mb-5">
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+              {{ cat }} ({{ byCategory(cat).length }})
+            </h3>
+            <div class="panel divide-y divide-ink-200/60">
+              <div
+                v-for="q in byCategory(cat)"
+                :key="q.question_id"
+                class="px-5 py-3"
+                :data-testid="`q-${q.question_id}`"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-ink-900">
+                      {{ q.text }}
+                      <span v-if="q.required" class="text-red-400" title="required">*</span>
+                    </p>
+                    <p v-if="q.rationale" class="mt-0.5 text-xs text-ink-500">
+                      {{ q.rationale }}
+                    </p>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-1.5">
+                    <span class="pill text-[10px]">{{ q.kind }}</span>
+                    <span class="pill text-[10px]" :class="statusClass(q.status)">
+                      {{ q.status }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- answered: show value (secrets masked) -->
+                <div
+                  v-if="q.status === 'answered' && drafts[q.question_id] === undefined"
+                  class="mt-2 flex items-center justify-between gap-3"
+                >
+                  <p
+                    class="min-w-0 flex-1 truncate text-sm text-ink-700"
+                    :data-testid="`q-${q.question_id}-answer`"
+                  >
+                    <span v-if="q.kind === 'secret'" class="text-ink-500">
+                      •••••••• (vaulted)
+                    </span>
+                    <template v-else>{{ q.answer }}</template>
+                  </p>
+                  <button class="btn-ghost btn" @click="startAnswer(q)">Re-answer</button>
+                </div>
+
+                <!-- skipped -->
+                <div
+                  v-else-if="q.status === 'skipped' && drafts[q.question_id] === undefined"
+                  class="mt-2 flex items-center justify-between gap-3"
+                >
+                  <p class="text-sm text-ink-500">Skipped</p>
+                  <button class="btn-ghost btn" @click="startAnswer(q)">Answer</button>
+                </div>
+
+                <!-- open OR re-answering: the answer input -->
+                <div v-else class="mt-2 flex items-end gap-2">
+                  <div class="flex-1">
+                    <select
+                      v-if="q.kind === 'choice'"
+                      v-model="drafts[q.question_id]"
+                      class="select"
+                      :data-testid="`q-${q.question_id}-input`"
+                    >
+                      <option value="" disabled>Choose…</option>
+                      <option v-for="o in q.options" :key="o" :value="o">{{ o }}</option>
+                    </select>
+                    <select
+                      v-else-if="q.kind === 'boolean'"
+                      v-model="drafts[q.question_id]"
+                      class="select"
+                      :data-testid="`q-${q.question_id}-input`"
+                    >
+                      <option value="" disabled>Choose…</option>
+                      <option value="yes">yes</option>
+                      <option value="no">no</option>
+                    </select>
+                    <input
+                      v-else
+                      v-model="drafts[q.question_id]"
+                      :type="q.kind === 'secret' ? 'password' : 'text'"
+                      class="input"
+                      :placeholder="placeholderFor(q)"
+                      :data-testid="`q-${q.question_id}-input`"
+                    />
+                  </div>
+                  <button
+                    class="btn-primary btn"
+                    :disabled="busyId === q.question_id || !String(drafts[q.question_id] || '').trim()"
+                    :data-testid="`q-${q.question_id}-submit`"
+                    @click="submitAnswer(q)"
+                  >
+                    {{ busyId === q.question_id ? '…' : 'Answer' }}
+                  </button>
+                  <button
+                    v-if="q.status === 'open'"
+                    class="btn-ghost btn"
+                    :disabled="busyId === q.question_id"
+                    @click="skip(q)"
+                  >
+                    Skip
+                  </button>
+                  <button v-else class="btn-ghost btn" @click="cancelAnswer(q)">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p v-else class="panel panel-pad text-sm text-ink-600">
+          No questions yet. The explorer generates these when it probes the site.
+        </p>
+      </section>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
+  answerSiteQuestion,
   createSiteKnowledge,
   deleteSiteKnowledge,
   getSiteTarget,
   listSiteFlows,
   listSiteKnowledge,
+  listSiteQuestions,
   listSiteSurfaces,
+  setTargetLifecycle,
+  skipSiteQuestion,
   updateSiteKnowledge,
 } from '../api.js'
 
@@ -220,19 +382,47 @@ const flows = ref([])
 const knowledge = ref([])
 const loadError = ref('')
 
+// Questionnaire + lifecycle.
+const questions = ref([])
+const qStatus = ref({ total: 0, answered: 0, open: 0, skipped: 0, required_open: 0 })
+const lifecycle = ref('')
+const lifecycleStates = ref([])
+
 const tab = ref('surfaces')
 const TABS = computed(() => [
   { id: 'surfaces', label: 'Surfaces', count: surfaces.value.length },
   { id: 'flows', label: 'Flows', count: flows.value.length },
   { id: 'knowledge', label: 'Knowledge', count: knowledge.value.length },
+  { id: 'questions', label: 'Questions', count: questions.value.length },
 ])
 
 function byKind(kind) {
   return knowledge.value.filter((k) => k.kind === kind)
 }
 
+// Categories in first-seen order (the explorer's ordering, preserved by the
+// API's (order, question_id) sort).
+const questionCategories = computed(() => {
+  const seen = []
+  for (const q of questions.value) {
+    if (!seen.includes(q.category)) seen.push(q.category)
+  }
+  return seen
+})
+function byCategory(cat) {
+  return questions.value.filter((q) => q.category === cat)
+}
+
 async function refreshKnowledge() {
   knowledge.value = await listSiteKnowledge(props.targetId)
+}
+
+async function refreshQuestions() {
+  const data = await listSiteQuestions(props.targetId)
+  questions.value = data.questions || []
+  qStatus.value = data.status || qStatus.value
+  lifecycle.value = data.lifecycle || lifecycle.value
+  lifecycleStates.value = data.lifecycle_states || lifecycleStates.value
 }
 
 onMounted(async () => {
@@ -242,6 +432,7 @@ onMounted(async () => {
       listSiteSurfaces(props.targetId),
       listSiteFlows(props.targetId),
       listSiteKnowledge(props.targetId),
+      refreshQuestions(),
     ])
     target.value = t
     surfaces.value = s
@@ -252,6 +443,80 @@ onMounted(async () => {
       e?.response?.data?.detail || e.message || 'Failed to load the site model'
   }
 })
+
+// ── questionnaire answering ──
+const drafts = reactive({})
+const busyId = ref(null)
+const questionsError = ref('')
+
+function statusClass(status) {
+  return {
+    answered: 'text-emerald-400',
+    skipped: 'text-ink-400',
+    open: 'text-amber-400',
+  }[status] || ''
+}
+
+function placeholderFor(q) {
+  if (q.kind === 'url') return 'https://…'
+  if (q.kind === 'number') return '123'
+  if (q.kind === 'secret') return '••••••••'
+  return 'Your answer'
+}
+
+function startAnswer(q) {
+  questionsError.value = ''
+  drafts[q.question_id] = ''
+}
+
+function cancelAnswer(q) {
+  delete drafts[q.question_id]
+}
+
+async function submitAnswer(q) {
+  const answer = String(drafts[q.question_id] || '').trim()
+  if (!answer) return
+  busyId.value = q.question_id
+  questionsError.value = ''
+  try {
+    await answerSiteQuestion(props.targetId, q.question_id, answer)
+    delete drafts[q.question_id]
+    await refreshQuestions()
+  } catch (e) {
+    questionsError.value =
+      e?.response?.data?.detail || e.message || 'Failed to save answer'
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function skip(q) {
+  busyId.value = q.question_id
+  questionsError.value = ''
+  try {
+    await skipSiteQuestion(props.targetId, q.question_id)
+    await refreshQuestions()
+  } catch (e) {
+    questionsError.value =
+      e?.response?.data?.detail || e.message || 'Failed to skip question'
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function changeLifecycle(next) {
+  if (!next || next === lifecycle.value) return
+  questionsError.value = ''
+  const prev = lifecycle.value
+  lifecycle.value = next
+  try {
+    await setTargetLifecycle(props.targetId, next)
+  } catch (e) {
+    lifecycle.value = prev
+    questionsError.value =
+      e?.response?.data?.detail || e.message || 'Failed to set lifecycle'
+  }
+}
 
 // ── curation ──
 const editing = ref(null)

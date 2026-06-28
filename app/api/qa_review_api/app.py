@@ -70,8 +70,9 @@ from qa_store import (
 # Site Model DAOs live in qa_store.site_model (not re-exported from the package
 # root). DEFAULT_TENANT scopes every read/write — single-tenant for now.
 from qa_store.embeddings import embedding_dim_for
-from qa_store.schema import DEFAULT_TENANT
+from qa_store.schema import DEFAULT_TENANT, SITE_QUESTION_KINDS
 from qa_store.site_model import (
+    LIFECYCLE_STATES,
     delete_site_knowledge,
     get_site_knowledge,
     get_site_target,
@@ -79,7 +80,17 @@ from qa_store.site_model import (
     list_knowledge_by_target,
     list_site_targets,
     list_surfaces_by_target,
+    set_target_lifecycle,
     upsert_site_knowledge,
+)
+from qa_store.site_questions import (
+    answer_site_question,
+    delete_site_question,
+    get_site_question,
+    list_questions_by_target,
+    questionnaire_status,
+    skip_site_question,
+    upsert_site_question,
 )
 
 from .issue import (
@@ -361,6 +372,30 @@ class SiteKnowledgePatch(BaseModel):
     body: str | None = Field(default=None, max_length=20_000)
     kind: str | None = None
     applies_to: list[str] | None = None
+
+
+# ── Explorer questionnaire (site_questions) + target lifecycle ──────────────
+class QuestionCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=4_000)
+    kind: str = "free_text"
+    category: str = Field(default="general", max_length=100)
+    rationale: str = Field(default="", max_length=4_000)
+    options: list[str] = Field(default_factory=list)
+    required: bool = False
+    order: int = 0
+    # Optional stable slug; generated when omitted.
+    question_id: str | None = Field(default=None, max_length=200)
+
+
+class QuestionAnswer(BaseModel):
+    # For a ``secret`` question the value is vaulted server-side and never
+    # echoed back; for every other kind it's stored inline.
+    answer: str = Field(min_length=1, max_length=20_000)
+    label: str = Field(default="", max_length=200)
+
+
+class LifecycleSet(BaseModel):
+    lifecycle: str = Field(min_length=1, max_length=50)
 
 
 # ---------------------------------------------------------------------------
@@ -1838,6 +1873,87 @@ def create_app(
         if not delete_site_knowledge(store, DEFAULT_TENANT, target_id, entry_id):
             raise HTTPException(status_code=404, detail=f"unknown entry {entry_id!r}")
         return {"deleted": True, "entry_id": entry_id}
+
+    # -- Explorer questionnaire + lifecycle --------------------------------
+    @app.get("/api/site/targets/{target_id}/questions", tags=["Site Model"])
+    def api_site_questions(target_id: str) -> dict:
+        """The target's questionnaire + its roll-up + onboarding lifecycle.
+        Secret answers come back as a ``credential_ref`` pointer, never a
+        value."""
+        target = get_site_target(store, DEFAULT_TENANT, target_id)
+        return {
+            "questions": list_questions_by_target(store, DEFAULT_TENANT, target_id),
+            "status": questionnaire_status(store, DEFAULT_TENANT, target_id),
+            "lifecycle": (target or {}).get("lifecycle"),
+            "lifecycle_states": list(LIFECYCLE_STATES),
+        }
+
+    @app.post("/api/site/targets/{target_id}/questions", tags=["Site Model"])
+    def api_create_question(target_id: str, body: QuestionCreate) -> dict:
+        if body.kind not in SITE_QUESTION_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"kind must be one of {list(SITE_QUESTION_KINDS)}",
+            )
+        qid = (body.question_id or "").strip() or f"q-{uuid.uuid4().hex[:12]}"
+        if "/" in qid:
+            raise HTTPException(status_code=422, detail="question_id must not contain '/'")
+        if get_site_question(store, DEFAULT_TENANT, target_id, qid) is not None:
+            raise HTTPException(status_code=409, detail=f"question {qid!r} already exists")
+        return upsert_site_question(
+            store, target_id=target_id, question_id=qid, text=body.text,
+            kind=body.kind, category=body.category, rationale=body.rationale,
+            options=body.options, required=body.required, order=body.order,
+            generated_by="operator",
+        )
+
+    @app.post(
+        "/api/site/targets/{target_id}/questions/{question_id}/answer",
+        tags=["Site Model"],
+    )
+    def api_answer_question(
+        target_id: str, question_id: str, body: QuestionAnswer,
+    ) -> dict:
+        updated = answer_site_question(
+            store, target_id=target_id, question_id=question_id,
+            answer=body.answer, label=body.label,
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"unknown question {question_id!r}")
+        return updated
+
+    @app.post(
+        "/api/site/targets/{target_id}/questions/{question_id}/skip",
+        tags=["Site Model"],
+    )
+    def api_skip_question(target_id: str, question_id: str) -> dict:
+        updated = skip_site_question(
+            store, target_id=target_id, question_id=question_id,
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"unknown question {question_id!r}")
+        return updated
+
+    @app.delete(
+        "/api/site/targets/{target_id}/questions/{question_id}",
+        tags=["Site Model"],
+    )
+    def api_delete_question(target_id: str, question_id: str) -> dict:
+        if not delete_site_question(store, DEFAULT_TENANT, target_id, question_id):
+            raise HTTPException(status_code=404, detail=f"unknown question {question_id!r}")
+        return {"deleted": True, "question_id": question_id}
+
+    @app.post("/api/site/targets/{target_id}/lifecycle", tags=["Site Model"])
+    def api_set_lifecycle(target_id: str, body: LifecycleSet) -> dict:
+        if body.lifecycle not in LIFECYCLE_STATES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"lifecycle must be one of {list(LIFECYCLE_STATES)}",
+            )
+        updated = set_target_lifecycle(store, DEFAULT_TENANT, target_id, body.lifecycle)
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
+        return updated
 
     # -- SPA static files --------------------------------------------------
     # Mounted last so /api/* always wins. If the dist dir is absent (local dev
