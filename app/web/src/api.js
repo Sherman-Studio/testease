@@ -4,6 +4,19 @@ import axios from 'axios'
 // Vite proxy (vite.config.js) forwards /api to the local uvicorn.
 const http = axios.create({ baseURL: '/api' })
 
+// ── BYOK: LLM backend config ──────────────────────────────────────────────
+// Status only — the API never returns the token. setLLMConfig posts an
+// optional new token (vaulted server-side); omit it to change only the backend.
+export function getLLMConfig() {
+  return http.get('/config/llm').then((r) => r.data)
+}
+export function setLLMConfig(payload) {
+  return http.put('/config/llm', payload).then((r) => r.data)
+}
+export function clearLLMToken() {
+  return http.delete('/config/llm/token').then((r) => r.data)
+}
+
 export function listRuns() {
   return http.get('/runs').then((r) => r.data)
 }

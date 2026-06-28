@@ -70,6 +70,14 @@ from qa_store import (
 
 # Site Model DAOs live in qa_store.site_model (not re-exported from the package
 # root). DEFAULT_TENANT scopes every read/write — single-tenant for now.
+from qa_store.app_config import (
+    LLM_BACKEND_ENV,
+    LLM_BACKENDS,
+    clear_llm_token,
+    get_llm_config,
+    get_llm_token,
+    set_llm_config,
+)
 from qa_store.embeddings import embedding_dim_for
 from qa_store.schema import DEFAULT_TENANT, SITE_QUESTION_KINDS
 from qa_store.site_model import (
@@ -406,6 +414,27 @@ class TargetCreate(BaseModel):
     base_url: str = Field(min_length=1, max_length=2_000)
     display_name: str = Field(default="", max_length=200)
     target_id: str | None = Field(default=None, max_length=200)
+
+
+class LLMConfigSet(BaseModel):
+    # BYOK: the backend choice + (optionally) a new token. The token is vaulted
+    # server-side and never returned; omit it to change only the backend.
+    backend: str = Field(min_length=1, max_length=50)
+    token: str | None = Field(default=None, max_length=4_000)
+
+
+_LLM_BACKEND_META = {
+    "claude-code": {
+        "label": "Claude Code subscription (flat price)",
+        "hint": "Runs on your Claude Code Max OAuth token — mint one with `claude setup-token`.",
+        "recommended": True,
+    },
+    "api": {
+        "label": "Anthropic API key (per-token billing)",
+        "hint": "Uses an ANTHROPIC_API_KEY; billed per token.",
+        "recommended": False,
+    },
+}
 
 
 def _slugify(text: str) -> str:
@@ -2015,6 +2044,48 @@ def create_app(
         if updated is None:
             raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
         return updated
+
+    # -- BYOK: LLM backend config ------------------------------------------
+    def _llm_status() -> dict:
+        """Status only — never the token. A token counts as configured if it's
+        vaulted (saved here) OR present in the environment (the cluster
+        pattern)."""
+        cfg = get_llm_config(store, DEFAULT_TENANT)
+        backend = cfg["backend"]
+        env_var = LLM_BACKEND_ENV.get(backend, "")
+        vaulted = bool(get_llm_token(store, DEFAULT_TENANT))
+        env_present = bool(os.environ.get(env_var, "").strip())
+        source = "vault" if vaulted else ("env" if env_present else None)
+        return {
+            "backend": backend,
+            "env_var": env_var,
+            "token_configured": vaulted or env_present,
+            "token_source": source,
+            "backends": [
+                {"id": b, "env": LLM_BACKEND_ENV.get(b, ""), **_LLM_BACKEND_META.get(b, {})}
+                for b in LLM_BACKENDS
+            ],
+        }
+
+    @app.get("/api/config/llm", tags=["Config"])
+    def api_get_llm_config() -> dict:
+        return _llm_status()
+
+    @app.put("/api/config/llm", tags=["Config"])
+    def api_set_llm_config(body: LLMConfigSet) -> dict:
+        if body.backend not in LLM_BACKENDS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"backend must be one of {list(LLM_BACKENDS)}",
+            )
+        token = (body.token or "").strip() or None
+        set_llm_config(store, backend=body.backend, token=token, tenant_id=DEFAULT_TENANT)
+        return _llm_status()
+
+    @app.delete("/api/config/llm/token", tags=["Config"])
+    def api_clear_llm_token() -> dict:
+        clear_llm_token(store, DEFAULT_TENANT)
+        return _llm_status()
 
     # -- SPA static files --------------------------------------------------
     # Mounted last so /api/* always wins. If the dist dir is absent (local dev

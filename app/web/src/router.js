@@ -4,6 +4,7 @@ import Discovered from './views/Discovered.vue'
 import MCPTools from './views/MCPTools.vue'
 import NewRun from './views/NewRun.vue'
 import Personas from './views/Personas.vue'
+import Settings from './views/Settings.vue'
 import PersonaDetail from './views/PersonaDetail.vue'
 import RunDetail from './views/RunDetail.vue'
 import RunsList from './views/RunsList.vue'
@@ -34,6 +35,7 @@ const routes = [
   { path: '/runs/:runId', name: 'run', component: RunDetail, props: true },
   { path: '/new-run', name: 'new-run', component: NewRun },
   { path: '/discovered', name: 'discovered', component: Discovered },
+  { path: '/settings', name: 'settings', component: Settings },
   { path: '/mcp-tools', name: 'mcp-tools', component: MCPTools },
   { path: '/admin', name: 'admin', component: Admin },
   // Old bookmarks still resolve: scenario presets live in the New Run console
