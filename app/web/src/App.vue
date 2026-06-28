@@ -301,6 +301,8 @@ const IconGear = () =>
   Icon('M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4')
 const IconSite = () =>
   Icon('M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.4 3.8 5.6 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.6-3.8-9s1.3-6.6 3.8-9z')
+const IconKey = () =>
+  Icon('M15 7a4 4 0 1 0-3.6 5.7L10 14l-1 1 1 1-1 1 1 1-2 2-2-2 6.6-6.6A4 4 0 0 0 15 7zM15.5 7.5h.01')
 
 // Primary destinations, ordered as the operator journey: add a site →
 // configure it → run personas → review. Sites is home.
@@ -313,6 +315,7 @@ const NAV = [
 ]
 // Reference + maintenance surfaces.
 const UTILITY = [
+  { to: '/settings', label: 'Settings', icon: IconKey },
   { to: '/mcp-tools', label: 'MCP tools', icon: IconMCP },
   { to: '/admin', label: 'Admin', icon: IconAdmin },
 ]

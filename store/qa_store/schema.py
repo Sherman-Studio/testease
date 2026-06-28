@@ -156,6 +156,10 @@ _SITE_QUESTIONS = "site_questions"   # the explorer's per-target human
                                      # questionnaire — one row per question;
                                      # secret answers are vaulted (credential_ref),
                                      # never stored inline.
+_QA_CONFIG = "qa_config"             # instance-level config (one doc per
+                                     # (tenant, key)): the LLM backend choice +
+                                     # a vault POINTER to the BYOK token. See
+                                     # qa_store.app_config.
 # Allowed enum-ish values, kept narrow on purpose (consistency across rows).
 SITE_AUTH_METHODS = ("none", "form", "magic_link", "oauth")
 SITE_SURFACE_KINDS = ("page", "form", "auth_flow", "api", "entity")
@@ -282,6 +286,12 @@ class Store:
         per question; secret answers are vaulted (the row carries a
         ``credential_ref``, never the raw value). See ``qa_store.site_questions``."""
         return self.db[_SITE_QUESTIONS]
+
+    @property
+    def qa_config(self):
+        """``qa_config`` — instance-level config (LLM backend + a vault pointer
+        to the BYOK token). See ``qa_store.app_config``."""
+        return self.db[_QA_CONFIG]
 
     def close(self) -> None:
         self.client.close()
@@ -475,6 +485,11 @@ def _ensure_indexes(store: Store) -> None:
             ("question_id", ASCENDING),
         ],
         unique=True, name="tenant_target_question_unique",
+    )
+    # ── Instance config (qa_config) — one doc per (tenant, key).
+    store.qa_config.create_index(
+        [("tenant_id", ASCENDING), ("key", ASCENDING)],
+        unique=True, name="tenant_key_unique",
     )
 # ---------------------------------------------------------------------------
 # Atlas Search vector indexes — distinct from the compound indexes above, which
