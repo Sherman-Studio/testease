@@ -7,7 +7,16 @@
     -->
     <header class="mb-6 flex items-end justify-between gap-4">
       <div>
-        <h1>Pick your testers</h1>
+        <h1 class="flex items-center gap-2">
+          Pick your testers
+          <HelpTip label="Persona">
+            A <strong>persona</strong> is a fictional user that explores your
+            site like a real person would — signing up, paying, poking the API,
+            hitting edge cases — and files the bugs they run into. The library
+            below is ~40 archetypes (a cautious mobile signup, a declined-card
+            payer, a privacy skeptic…); pick the ones that match your real users.
+          </HelpTip>
+        </h1>
         <p class="mt-1 max-w-2xl text-sm text-ink-600">
           {{ activeCount }} of {{ totalCount }} personas activated. Tick
           the ones that match how your real users behave — activated
@@ -228,6 +237,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { createPersona, listPersonas, updatePersona } from '../api.js'
 import Avatar from '../components/Avatar.vue'
+import HelpTip from '../components/HelpTip.vue'
 import PersonaForm from '../components/PersonaForm.vue'
 
 // Suggested starter set — covers the main flow archetypes. Used by the

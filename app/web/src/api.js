@@ -4,6 +4,19 @@ import axios from 'axios'
 // Vite proxy (vite.config.js) forwards /api to the local uvicorn.
 const http = axios.create({ baseURL: '/api' })
 
+// ── BYOK: LLM backend config ──────────────────────────────────────────────
+// Status only — the API never returns the token. setLLMConfig posts an
+// optional new token (vaulted server-side); omit it to change only the backend.
+export function getLLMConfig() {
+  return http.get('/config/llm').then((r) => r.data)
+}
+export function setLLMConfig(payload) {
+  return http.put('/config/llm', payload).then((r) => r.data)
+}
+export function clearLLMToken() {
+  return http.delete('/config/llm/token').then((r) => r.data)
+}
+
 export function listRuns() {
   return http.get('/runs').then((r) => r.data)
 }
@@ -386,6 +399,13 @@ export function getSiteTarget(targetId) {
   return http
     .get(`/site/targets/${encodeURIComponent(targetId)}`)
     .then((r) => r.data)
+}
+
+// Register a new site to test (the onboarding front door). payload:
+// { base_url, display_name?, target_id? } → the created target (lifecycle
+// "registered"); the server slugifies + de-duplicates the target_id.
+export function createSiteTarget(payload) {
+  return http.post('/site/targets', payload).then((r) => r.data)
 }
 
 export function listSiteSurfaces(targetId) {
