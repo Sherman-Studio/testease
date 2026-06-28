@@ -11,19 +11,11 @@ import SiteModel from './views/SiteModel.vue'
 import SiteTarget from './views/SiteTarget.vue'
 
 const routes = [
-  // #1822 — three primary destinations (Runs / New Run / Personas) plus
-  // the ⚙ utility pages (Discovered / MCP tools / Admin).
-  { path: '/', name: 'runs', component: RunsList },
-  { path: '/new-run', name: 'new-run', component: NewRun },
-  { path: '/runs/:runId', name: 'run', component: RunDetail, props: true },
-  { path: '/personas', name: 'personas', component: Personas },
-  {
-    path: '/personas/:personaId',
-    name: 'persona',
-    component: PersonaDetail,
-    props: true,
-  },
-  // Site Model — browse a target's map/plan + curate its by-design knowledge.
+  // The onboarding redesign makes Sites the home: the journey is
+  // add a site → configure it → run personas → review. `/` redirects there;
+  // the Runs list moves to /runs (RunDetail already lives under /runs/:id).
+  { path: '/', redirect: '/site' },
+  // Sites — register + browse the targets and their site model.
   { path: '/site', name: 'site', component: SiteModel },
   {
     path: '/site/:targetId',
@@ -31,14 +23,23 @@ const routes = [
     component: SiteTarget,
     props: true,
   },
+  { path: '/personas', name: 'personas', component: Personas },
+  {
+    path: '/personas/:personaId',
+    name: 'persona',
+    component: PersonaDetail,
+    props: true,
+  },
+  { path: '/runs', name: 'runs', component: RunsList },
+  { path: '/runs/:runId', name: 'run', component: RunDetail, props: true },
+  { path: '/new-run', name: 'new-run', component: NewRun },
   { path: '/discovered', name: 'discovered', component: Discovered },
   { path: '/mcp-tools', name: 'mcp-tools', component: MCPTools },
   { path: '/admin', name: 'admin', component: Admin },
-  // #1822 retired two top-level pages. Old bookmarks still resolve:
-  // scenario presets are saved/loaded from the New Run console now, and
-  // transcript search lives inside each run's Timeline tab.
+  // Old bookmarks still resolve: scenario presets live in the New Run console
+  // now, and transcript search lives inside each run's Timeline tab.
   { path: '/scenarios', redirect: '/new-run' },
-  { path: '/transcripts', redirect: '/' },
+  { path: '/transcripts', redirect: '/runs' },
 ]
 
 export default createRouter({

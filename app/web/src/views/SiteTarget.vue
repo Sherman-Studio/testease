@@ -1,15 +1,25 @@
 <template>
   <div class="mx-auto max-w-5xl p-6">
     <div class="mb-4 text-xs">
-      <router-link to="/site">← Site Model</router-link>
+      <router-link to="/site">← Sites</router-link>
     </div>
 
     <div v-if="loadError" class="text-sm text-red-400">{{ loadError }}</div>
 
     <template v-else>
-      <header class="mb-6 flex items-end justify-between gap-4">
+      <header class="mb-4 flex items-end justify-between gap-4">
         <div class="min-w-0">
-          <h1 class="truncate">{{ target?.display_name || targetId }}</h1>
+          <h1 class="flex min-w-0 items-center gap-2">
+            <span class="truncate">{{ target?.display_name || targetId }}</span>
+            <HelpTip label="Site model">
+              The <strong>site model</strong> is everything Test Ease knows about
+              this site, as data: its <strong>Surfaces</strong> (pages/forms),
+              the <strong>Flows</strong> personas should walk, curated
+              <strong>Knowledge</strong> (what's intentional, so testers don't
+              re-flag it), and the <strong>Questions</strong> you answer to
+              configure the run.
+            </HelpTip>
+          </h1>
           <p v-if="target?.base_url" class="mt-1 truncate text-sm text-ink-500">
             {{ target.base_url }}
           </p>
@@ -27,7 +37,39 @@
         </div>
       </header>
 
-      <!-- Surfaces / Flows / Knowledge tabs -->
+      <!-- Onboarding lifecycle stepper -->
+      <div
+        v-if="lifecycle && lifecycleStates.length"
+        class="mb-6 panel panel-pad"
+        data-testid="lifecycle-stepper"
+      >
+        <div class="flex flex-wrap items-center gap-1.5">
+          <template v-for="(s, i) in lifecycleStates" :key="s">
+            <span
+              class="rounded-full px-2.5 py-1 text-[11px] font-medium transition"
+              :class="
+                i === lifecycleIndex
+                  ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-600/40'
+                  : i < lifecycleIndex
+                    ? 'text-brand-700'
+                    : 'text-ink-400'
+              "
+            >
+              {{ s }}
+            </span>
+            <span
+              v-if="i < lifecycleStates.length - 1"
+              class="text-ink-300"
+              aria-hidden="true"
+            >→</span>
+          </template>
+        </div>
+        <p v-if="nextStepHint" class="mt-2 text-xs text-ink-500">
+          <span class="font-medium text-ink-700">Next:</span> {{ nextStepHint }}
+        </p>
+      </div>
+
+      <!-- Surfaces / Flows / Knowledge / Questions tabs -->
       <div class="mb-4 flex items-center gap-2 border-b border-ink-200">
         <button
           v-for="t in TABS"
@@ -47,6 +89,10 @@
 
       <!-- Surfaces — read-only -->
       <section v-if="tab === 'surfaces'">
+        <p class="mb-3 text-sm text-ink-600">
+          Surfaces are the pages, forms, and API endpoints discovered on this
+          site — the map the personas navigate.
+        </p>
         <div v-if="surfaces.length" class="panel divide-y divide-ink-200/60">
           <div
             v-for="s in surfaces"
@@ -71,6 +117,10 @@
 
       <!-- Flows — read-only -->
       <section v-else-if="tab === 'flows'">
+        <p class="mb-3 text-sm text-ink-600">
+          Flows are the journeys worth testing — signup, checkout, sharing —
+          each tagged with the persona archetype best suited to walk it.
+        </p>
         <div v-if="flows.length" class="panel divide-y divide-ink-200/60">
           <div
             v-for="f in flows"
@@ -369,6 +419,7 @@ import {
   skipSiteQuestion,
   updateSiteKnowledge,
 } from '../api.js'
+import HelpTip from '../components/HelpTip.vue'
 
 const props = defineProps({
   targetId: { type: String, required: true },
@@ -387,6 +438,17 @@ const questions = ref([])
 const qStatus = ref({ total: 0, answered: 0, open: 0, skipped: 0, required_open: 0 })
 const lifecycle = ref('')
 const lifecycleStates = ref([])
+
+const lifecycleIndex = computed(() => lifecycleStates.value.indexOf(lifecycle.value))
+const _NEXT_STEP = {
+  registered: 'explore the site, then answer its questionnaire in the Questions tab.',
+  exploring: 'review what was discovered, then answer the questionnaire below.',
+  'awaiting-answers': 'answer the required questions in the Questions tab below.',
+  configured: "you're ready — launch a run from New Run.",
+  testing: 'personas are running — review what they find under Runs.',
+  're-explore': 'run discovery again to refresh this site model.',
+}
+const nextStepHint = computed(() => _NEXT_STEP[lifecycle.value] || '')
 
 const tab = ref('surfaces')
 const TABS = computed(() => [

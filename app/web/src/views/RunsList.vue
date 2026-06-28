@@ -7,10 +7,18 @@
     -->
     <header class="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1>Runs</h1>
+        <h1 class="flex items-center gap-2">
+          Runs
+          <HelpTip label="Run">
+            A <strong>run</strong> is one round of testing: the personas you
+            picked explore a site, then write up what they found. Each row below
+            is one run — open it to read the findings and per-persona reviews,
+            or watch it live.
+          </HelpTip>
+        </h1>
         <p class="mt-1 text-sm text-ink-600">
-          One row per harness invocation. Click into a run to triage
-          findings, read persona reviews, or watch the live timeline.
+          Each row is one round of persona testing. Open a run to read what the
+          testers found, see their reviews, or watch it live.
         </p>
       </div>
       <router-link to="/new-run" class="cta-start" data-testid="new-run-button">
@@ -24,8 +32,9 @@
     <div v-if="loading" class="text-sm text-ink-600">Loading runs…</div>
     <div v-else-if="error" class="text-sm text-red-400">{{ error }}</div>
     <div v-else-if="runs.length === 0" class="panel panel-pad text-sm text-ink-600">
-      No QA runs recorded yet.
-      <router-link to="/new-run">Start your first run →</router-link>
+      No runs yet. First
+      <router-link to="/site">add a site and answer its questionnaire →</router-link>,
+      then launch a run.
     </div>
 
     <div v-else class="panel overflow-x-auto">
@@ -146,6 +155,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Avatar from '../components/Avatar.vue'
 import FindingCounts from '../components/FindingCounts.vue'
+import HelpTip from '../components/HelpTip.vue'
 import { listPersonas, listRuns } from '../api.js'
 import { formatDate, formatTokens, relativeTime } from '../format.js'
 

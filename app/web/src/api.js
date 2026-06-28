@@ -388,6 +388,13 @@ export function getSiteTarget(targetId) {
     .then((r) => r.data)
 }
 
+// Register a new site to test (the onboarding front door). payload:
+// { base_url, display_name?, target_id? } → the created target (lifecycle
+// "registered"); the server slugifies + de-duplicates the target_id.
+export function createSiteTarget(payload) {
+  return http.post('/site/targets', payload).then((r) => r.data)
+}
+
 export function listSiteSurfaces(targetId) {
   return http
     .get(`/site/targets/${encodeURIComponent(targetId)}/surfaces`)

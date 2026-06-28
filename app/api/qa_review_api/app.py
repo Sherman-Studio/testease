@@ -20,6 +20,7 @@ control reaches the cluster lazily (see ``runs.py``).
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -82,6 +83,7 @@ from qa_store.site_model import (
     list_surfaces_by_target,
     set_target_lifecycle,
     upsert_site_knowledge,
+    upsert_site_target,
 )
 from qa_store.site_questions import (
     answer_site_question,
@@ -396,6 +398,33 @@ class QuestionAnswer(BaseModel):
 
 class LifecycleSet(BaseModel):
     lifecycle: str = Field(min_length=1, max_length=50)
+
+
+class TargetCreate(BaseModel):
+    # Operator registers a site to test. base_url is the only required field;
+    # target_id is slugified from the host/display_name when omitted.
+    base_url: str = Field(min_length=1, max_length=2_000)
+    display_name: str = Field(default="", max_length=200)
+    target_id: str | None = Field(default=None, max_length=200)
+
+
+def _slugify(text: str) -> str:
+    """Lowercase, collapse non-alphanumerics to hyphens, trim. Empty → ''."""
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+
+
+def _target_host(base_url: str) -> str:
+    """Best-effort host slug from a URL, for a default target_id."""
+    from urllib.parse import urlparse  # noqa: PLC0415 — local, cheap
+
+    host = urlparse(base_url).hostname or ""
+    # Drop a leading www. and the trailing TLD label so https://www.acme.com
+    # → "acme" (a friendly slug; display_name carries the real name).
+    host = host[4:] if host.startswith("www.") else host
+    parts = host.split(".")
+    if len(parts) >= 2:
+        host = ".".join(parts[:-1])
+    return _slugify(host)
 
 
 # ---------------------------------------------------------------------------
@@ -1801,6 +1830,38 @@ def create_app(
                 for t in list_site_targets(store, DEFAULT_TENANT)
             ],
         }
+
+    @app.post("/api/site/targets", tags=["Site Model"])
+    def api_create_target(body: TargetCreate) -> dict:
+        """Register a new site to test. The front door of the onboarding flow:
+        creates the target at lifecycle ``registered``. base_url is required;
+        target_id is slugified from the display name / host when omitted and
+        de-duplicated with a numeric suffix."""
+        base_url = body.base_url.strip()
+        if not re.match(r"^https?://[^\s.]+\.[^\s]+", base_url):
+            raise HTTPException(
+                status_code=422,
+                detail="base_url must be a full http(s):// URL, e.g. https://app.example.com",
+            )
+        requested = (body.target_id or "").strip()
+        if requested:
+            slug = _slugify(requested)
+            if not slug:
+                raise HTTPException(status_code=422, detail="target_id must be a slug")
+            if get_site_target(store, DEFAULT_TENANT, slug) is not None:
+                raise HTTPException(status_code=409, detail=f"target {slug!r} already exists")
+        else:
+            base = _slugify(body.display_name) or _target_host(base_url) or "site"
+            slug = base
+            n = 2
+            while get_site_target(store, DEFAULT_TENANT, slug) is not None:
+                slug = f"{base}-{n}"
+                n += 1
+        saved = upsert_site_target(
+            store, tenant_id=DEFAULT_TENANT, target_id=slug, base_url=base_url,
+            display_name=body.display_name or slug,
+        )
+        return _strip_site_embeddings(saved)
 
     @app.get("/api/site/targets/{target_id}", tags=["Site Model"])
     def api_site_target(target_id: str) -> dict:

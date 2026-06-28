@@ -25,14 +25,14 @@
           <component :is="item.icon" class="h-4 w-4 shrink-0" />
           <span v-if="!navCollapsed" class="flex-1 truncate">{{ item.label }}</span>
           <span
-            v-if="!navCollapsed && item.to === '/' && activeRunBadge"
+            v-if="!navCollapsed && item.prefix === '/runs' && activeRunBadge"
             class="flex items-center gap-1 text-[10px] font-medium text-emerald-300"
           >
             <span class="lamp lamp-live"></span>
             live
           </span>
           <span
-            v-else-if="navCollapsed && item.to === '/' && activeRunBadge"
+            v-else-if="navCollapsed && item.prefix === '/runs' && activeRunBadge"
             class="lamp lamp-live"
             aria-label="Run in progress"
           ></span>
@@ -45,9 +45,8 @@
         :pod-count="activeRunPodCount"
       />
 
-      <!-- ⚙ utility menu — Discovered · MCP tools · Admin · API docs.
-           Reference and maintenance surfaces demoted out of the main
-           nav (#1822 §4). -->
+      <!-- ⚙ utility menu — MCP tools · Admin · API docs.
+           Reference and maintenance surfaces, demoted out of the main nav. -->
       <div class="relative mt-3">
         <button
           class="nav-row w-full"
@@ -168,7 +167,7 @@
               <component :is="item.icon" class="h-4 w-4 shrink-0" />
               <span class="flex-1 truncate">{{ item.label }}</span>
               <span
-                v-if="item.to === '/' && activeRunBadge"
+                v-if="item.prefix === '/runs' && activeRunBadge"
                 class="flex items-center gap-1 text-[10px] font-medium text-emerald-300"
               >
                 <span class="lamp lamp-live"></span>
@@ -303,21 +302,22 @@ const IconGear = () =>
 const IconSite = () =>
   Icon('M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.4 3.8 5.6 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.6-3.8-9s1.3-6.6 3.8-9z')
 
-// #1822 — primary destinations. Everything else lives in UTILITY.
+// Primary destinations, ordered as the operator journey: add a site →
+// configure it → run personas → review. Sites is home.
 const NAV = [
-  { to: '/', label: 'Runs', icon: IconRuns, prefix: '/runs' },
-  { to: '/new-run', label: 'New Run', icon: IconLaunch, prefix: '/new-run' },
+  { to: '/site', label: 'Sites', icon: IconSite, prefix: '/site' },
   { to: '/personas', label: 'Personas', icon: IconPersonas, prefix: '/personas' },
-  { to: '/site', label: 'Site Model', icon: IconSite, prefix: '/site' },
+  { to: '/runs', label: 'Runs', icon: IconRuns, prefix: '/runs' },
+  { to: '/new-run', label: 'New Run', icon: IconLaunch, prefix: '/new-run' },
+  { to: '/discovered', label: 'Discovered', icon: IconDiscovered, prefix: '/discovered' },
 ]
+// Reference + maintenance surfaces.
 const UTILITY = [
-  { to: '/discovered', label: 'Discovered', icon: IconDiscovered },
   { to: '/mcp-tools', label: 'MCP tools', icon: IconMCP },
   { to: '/admin', label: 'Admin', icon: IconAdmin },
 ]
 
 function isActive(item) {
-  if (item.to === '/') return route.path === '/' || route.path.startsWith('/runs')
   return route.path.startsWith(item.prefix)
 }
 const utilityActive = computed(() =>
