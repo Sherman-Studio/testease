@@ -2045,6 +2045,19 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
         return updated
 
+    @app.post("/api/site/targets/{target_id}/explore", tags=["Site Model"])
+    def api_explore_target(target_id: str) -> dict:
+        """Run the heuristic explorer: bootstrap the site model + questionnaire
+        from the target's homepage and advance the lifecycle to
+        ``awaiting-answers``. (v1 is GET-only HTML discovery — no token needed;
+        the LLM/browser agent is a later layer.)"""
+        from .explorer import explore_target  # noqa: PLC0415 — httpx only when used
+
+        summary = explore_target(store, target_id, tenant_id=DEFAULT_TENANT)
+        if summary is None:
+            raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
+        return summary
+
     # -- BYOK: LLM backend config ------------------------------------------
     def _llm_status() -> dict:
         """Status only — never the token. A token counts as configured if it's

@@ -64,8 +64,29 @@
             >→</span>
           </template>
         </div>
-        <p v-if="nextStepHint" class="mt-2 text-xs text-ink-500">
-          <span class="font-medium text-ink-700">Next:</span> {{ nextStepHint }}
+        <div class="mt-2 flex flex-wrap items-center gap-3">
+          <p v-if="nextStepHint" class="text-xs text-ink-500">
+            <span class="font-medium text-ink-700">Next:</span> {{ nextStepHint }}
+          </p>
+          <button
+            v-if="canExplore"
+            class="btn-primary btn"
+            :disabled="exploring"
+            data-testid="explore-btn"
+            @click="explore"
+          >
+            {{ exploring ? 'Exploring…' : (lifecycle === 're-explore' ? 'Re-explore the site' : 'Explore the site') }}
+          </button>
+        </div>
+        <p v-if="exploreError" class="mt-2 text-xs text-red-400" data-testid="explore-error">
+          {{ exploreError }}
+        </p>
+        <p v-if="exploreSummary" class="mt-2 text-xs text-emerald-400" data-testid="explore-summary">
+          Explored{{ exploreSummary.title ? ` “${exploreSummary.title}”` : '' }} —
+          {{ exploreSummary.counts.surfaces }} surface(s),
+          {{ exploreSummary.counts.flows }} flow(s),
+          {{ exploreSummary.counts.questions }} question(s).
+          Answer the questionnaire below.
         </p>
       </div>
 
@@ -410,6 +431,7 @@ import {
   answerSiteQuestion,
   createSiteKnowledge,
   deleteSiteKnowledge,
+  exploreSiteTarget,
   getSiteTarget,
   listSiteFlows,
   listSiteKnowledge,
@@ -440,6 +462,10 @@ const lifecycle = ref('')
 const lifecycleStates = ref([])
 
 const lifecycleIndex = computed(() => lifecycleStates.value.indexOf(lifecycle.value))
+// The explorer is offered before a site is configured (or to re-run discovery).
+const canExplore = computed(() =>
+  ['registered', 'exploring', 're-explore'].includes(lifecycle.value),
+)
 const _NEXT_STEP = {
   registered: 'explore the site, then answer its questionnaire in the Questions tab.',
   exploring: 'review what was discovered, then answer the questionnaire below.',
@@ -485,6 +511,40 @@ async function refreshQuestions() {
   qStatus.value = data.status || qStatus.value
   lifecycle.value = data.lifecycle || lifecycle.value
   lifecycleStates.value = data.lifecycle_states || lifecycleStates.value
+}
+
+async function reloadModel() {
+  const [t, s, f, k] = await Promise.all([
+    getSiteTarget(props.targetId),
+    listSiteSurfaces(props.targetId),
+    listSiteFlows(props.targetId),
+    listSiteKnowledge(props.targetId),
+    refreshQuestions(),
+  ])
+  target.value = t
+  surfaces.value = s
+  flows.value = f
+  knowledge.value = k
+}
+
+// ── explorer ──
+const exploring = ref(false)
+const exploreError = ref('')
+const exploreSummary = ref(null)
+async function explore() {
+  exploring.value = true
+  exploreError.value = ''
+  exploreSummary.value = null
+  try {
+    exploreSummary.value = await exploreSiteTarget(props.targetId)
+    await reloadModel()
+    tab.value = 'questions' // land on the freshly-generated questionnaire
+  } catch (e) {
+    exploreError.value =
+      e?.response?.data?.detail || e.message || 'Exploration failed'
+  } finally {
+    exploring.value = false
+  }
 }
 
 onMounted(async () => {
