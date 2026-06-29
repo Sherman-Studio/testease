@@ -378,6 +378,9 @@ class FakeRunControl:
         # _resolve_enabled_mcp_servers falls through). Non-empty == the
         # exact opt-in.
         self.enabled_mcp_servers_list: list[list[str] | None] = []
+        # P4 — record per-trigger capability-derived credentials (vaulted
+        # creds injected as harness env vars). None == no target / no grants.
+        self.capability_envs: list[dict | None] = []
         # Record secret-existence pre-check calls. The Max OAuth-token
         # Secret is pre-checked unconditionally now (every run is Max).
         self.secret_checks: list[str] = []
@@ -414,6 +417,7 @@ class FakeRunControl:
         mandatory_action_ids=None,
         target_url=None,
         enabled_mcp_servers=None,
+        capability_env=None,
         pod_count=1,
         store=None,
     ):
@@ -432,6 +436,7 @@ class FakeRunControl:
         self.enabled_mcp_servers_list.append(
             list(enabled_mcp_servers) if enabled_mcp_servers else None
         )
+        self.capability_envs.append(dict(capability_env) if capability_env else None)
         self.mandatory_action_ids_list.append(
             list(mandatory_action_ids) if mandatory_action_ids else []
         )
@@ -508,6 +513,50 @@ def test_trigger_run_with_chosen_personas(store):
     assert resp.status_code == 200
     assert resp.json()["job_name"] == "qa-ui-123"
     assert rc.triggered == [["first-impression-critic", "email-verifier"]]
+
+
+def test_trigger_auto_enables_granted_capability_servers(store, monkeypatch):
+    """P4 — a run for a target auto-enables the MCP servers that target has
+    *granted* capabilities for, and injects their vaulted creds as env, without
+    dropping the default-on servers."""
+    monkeypatch.delenv("QA_CREDENTIAL_KEY", raising=False)
+    from qa_store.capabilities import set_capability_status
+    set_capability_status(
+        store, target_id="acme", capability_id="openapi-spec",
+        status="granted", token="https://acme.test/openapi.json",
+    )
+    rc = FakeRunControl()
+    resp = _client(store, run_control=rc).post(
+        "/api/runs/trigger",
+        json={"personas": ["first-impression-critic"], "target_id": "acme"},
+    )
+    assert resp.status_code == 200
+    enabled = rc.enabled_mcp_servers_list[0]
+    assert "openapi" in enabled            # granted capability lit its server
+    assert "playwright" in enabled and "findings" in enabled  # defaults preserved
+    # The vaulted spec URL reaches the run as the env var the harness reads.
+    assert rc.capability_envs[0] == {"QA_OPENAPI_URL": "https://acme.test/openapi.json"}
+
+
+def test_trigger_without_target_id_leaves_mcp_untouched(store):
+    rc = FakeRunControl()
+    resp = _client(store, run_control=rc).post(
+        "/api/runs/trigger", json={"personas": ["first-impression-critic"]},
+    )
+    assert resp.status_code == 200
+    assert rc.enabled_mcp_servers_list[0] is None  # catalog defaults, unchanged
+    assert rc.capability_envs[0] is None
+
+
+def test_trigger_target_with_no_grants_is_a_plain_run(store):
+    rc = FakeRunControl()
+    resp = _client(store, run_control=rc).post(
+        "/api/runs/trigger",
+        json={"personas": ["first-impression-critic"], "target_id": "acme"},
+    )
+    assert resp.status_code == 200
+    assert rc.enabled_mcp_servers_list[0] is None
+    assert rc.capability_envs[0] is None
 
 
 def test_trigger_run_empty_means_active_set(store):

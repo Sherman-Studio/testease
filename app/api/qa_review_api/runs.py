@@ -297,6 +297,7 @@ class K8sRunControl:
         mandatory_action_ids: list[str] | None = None,
         target_url: str | None = None,
         enabled_mcp_servers: list[str] | None = None,
+        capability_env: dict[str, str] | None = None,
         pod_count: int = 1,
         store=None,
     ) -> dict:
@@ -529,6 +530,22 @@ class K8sRunControl:
                             name="QA_ENABLED_MCPS",
                             value=",".join(enabled_mcp_servers),
                         )
+                    ]
+                if capability_env:
+                    # P4 — per-target credentials resolved from granted
+                    # capabilities (vaulted; e.g. QA_OPENAPI_URL / QA_MAILPIT_URL).
+                    # The harness already reads these env vars into Config and its
+                    # build_*_server factories, so setting them here is all it
+                    # takes to feed a granted capability's credential to its MCP
+                    # server. Same strip-then-append shape; a capability-supplied
+                    # value overrides any baked-in CronJob default for that var.
+                    names = set(capability_env)
+                    container.env = [
+                        e for e in (container.env or [])
+                        if getattr(e, "name", None) not in names
+                    ] + [
+                        k8s.client.V1EnvVar(name=name, value=value)
+                        for name, value in sorted(capability_env.items())
                     ]
 
         # #1821 — mint ONE shared run id and inject it as QA_RUN_ID across

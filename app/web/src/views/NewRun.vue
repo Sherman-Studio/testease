@@ -81,6 +81,17 @@
             first to explore it.
           </template>
         </p>
+        <p
+          v-if="targetMcp.servers.length"
+          class="mt-2 rounded-md border border-brand-600/40 bg-brand-50/40 px-3 py-2 text-xs text-brand-800"
+          data-testid="auto-mcp-note"
+        >
+          🔌 {{ targetMcp.servers.length }} extra tool{{ targetMcp.servers.length === 1 ? '' : 's' }}
+          auto-enabled from this site's granted access:
+          <strong>{{ targetMcp.servers.map((s) => s.friendly_name || s.display_name).join(', ') }}</strong>.
+          Manage under
+          <router-link :to="`/site/${selectedTargetId}`">the site's Capabilities</router-link>.
+        </p>
 
         <!-- Presets — saved persona + coverage combos. #1822 retired the
              /scenarios page; saving and loading presets lives here now. -->
@@ -606,6 +617,7 @@ import {
   getPersonas,
   listMCPServers,
   listPersonas,
+  getTargetMcp,
   listScenarios,
   listSiteTargets,
   triggerRun,
@@ -715,6 +727,22 @@ const targetUrl = ref('')
 // Sites the operator has added — used to default the target to a real site of
 // theirs (and offer quick-pick chips) instead of a hardcoded URL.
 const siteTargets = ref([])
+// P4 — the registered target whose base_url matches the chosen URL (if any), and
+// the MCP tools it has *granted* capabilities for (auto-enabled on launch).
+const selectedTargetId = computed(() => {
+  const u = targetUrl.value.trim()
+  return u ? (siteTargets.value.find((t) => t.base_url === u)?.target_id ?? null) : null
+})
+const targetMcp = ref({ server_ids: [], servers: [] })
+// Refresh the auto-enabled tool list whenever the resolved target changes.
+watch(selectedTargetId, async (id) => {
+  if (!id) { targetMcp.value = { server_ids: [], servers: [] }; return }
+  try {
+    targetMcp.value = await getTargetMcp(id)
+  } catch {
+    targetMcp.value = { server_ids: [], servers: [] }
+  }
+}, { immediate: true })
 // #1031 — per-run MCP server selection, pre-populated with catalog
 // defaults so an untouched panel reproduces historical behaviour.
 const mcpCatalog = ref([])
@@ -986,6 +1014,9 @@ async function trigger() {
       runNotes: notes,
       mandatoryActionIds: mandatory,
       targetUrl: target,
+      // P4 — forward the registered target so the server auto-enables the MCP
+      // tools this site has granted capabilities for (and injects their creds).
+      targetId: selectedTargetId.value,
       // #1031 — omit when the selection matches catalog defaults so the
       // server keeps the pre-Slice-C "catalog decides" semantics.
       enabledMCPServers: isDefaultMcpSelection.value ? [] : currentMcpIds,

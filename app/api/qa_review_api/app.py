@@ -357,6 +357,11 @@ class TriggerRunRequest(BaseModel):
     # the catalog is curated and the maximum reasonable selection is
     # the full catalog; longer would mean a bug or operator misuse.
     enabled_mcp_servers: list[str] | None = Field(default=None, max_length=20)
+    # P4 — the registered target this run is for (the New Run form sends it once
+    # it defaults the URL from a site). When present, the run auto-enables the
+    # MCP servers that target has *granted* capabilities for, and injects their
+    # vaulted credentials as env. Omitted ⇒ a plain URL-only run, unchanged.
+    target_id: str | None = Field(default=None, max_length=200)
 
 
 # ---------------------------------------------------------------------------
@@ -856,6 +861,31 @@ def create_app(
                 )
         except ClusterUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        # P4 — light up the MCP servers this target has *granted* capabilities
+        # for, and inject their vaulted credentials as the env vars the harness
+        # already reads. Best-effort: a resolution hiccup must never block a run.
+        enabled_servers = req.enabled_mcp_servers
+        capability_env: dict[str, str] | None = None
+        if req.target_id:
+            try:
+                from qa_agents.mcp_catalog import list_servers  # noqa: PLC0415
+                from qa_agents.target_mcp import resolve_target_mcp  # noqa: PLC0415
+                resolved = resolve_target_mcp(store, req.target_id)
+            except Exception:  # noqa: BLE001 — enrichment, never fatal
+                resolved = {"server_ids": [], "env": {}}
+            derived = resolved.get("server_ids") or []
+            if derived:
+                # Augment, never shrink: a non-empty enabled list is an exclusive
+                # opt-in to the harness, so union the derived servers onto the
+                # operator's choice (or onto the default-on set when they left it
+                # to defaults) — otherwise auto-adding one server would silently
+                # drop playwright/findings.
+                base = list(req.enabled_mcp_servers) if req.enabled_mcp_servers else [
+                    s.id for s in list_servers() if s.default_enabled
+                ]
+                enabled_servers = base + [s for s in derived if s not in base]
+            capability_env = resolved.get("env") or None
         try:
             return run_control.trigger(
                 personas_to_run,
@@ -867,7 +897,8 @@ def create_app(
                 run_notes=req.run_notes,
                 mandatory_action_ids=req.mandatory_action_ids,
                 target_url=req.target_url,
-                enabled_mcp_servers=req.enabled_mcp_servers,
+                enabled_mcp_servers=enabled_servers,
+                capability_env=capability_env,
                 # #1821 — an omitted pod_count forwards as 1 (single-pod, the
                 # pre-#1821 Job shape, byte-for-byte). An explicit value passes
                 # straight through to drive the N-Jobs fan-out (Option B).
@@ -2094,6 +2125,18 @@ def create_app(
         return summary
 
     # -- Capabilities (grant deeper access) --------------------------------
+    def _powers_for(capability_id: str) -> list[dict]:
+        """The MCP server(s) a capability lights up when granted — for the
+        "Powers the … tool" UI on a capability card. Names only, no secrets."""
+        try:
+            from qa_agents.mcp_catalog import servers_unlocked_by  # noqa: PLC0415
+        except ImportError:
+            return []
+        return [
+            {"server_id": s.id, "display_name": s.display_name, "friendly_name": s.friendly}
+            for s in servers_unlocked_by(capability_id)
+        ]
+
     def _capabilities_view(target_id: str) -> dict:
         """Catalog merged with this target's grant status + the depth roll-up.
         Secrets are pointers only — values are never returned."""
@@ -2110,6 +2153,7 @@ def create_app(
                 "credential_ref": (g or {}).get("credential_ref"),
                 "config": (g or {}).get("config", {}),
                 "proposed_by": (g or {}).get("proposed_by"),
+                "powers": _powers_for(cap["capability_id"]),
             })
         return {
             "depth": capability_depth(store, DEFAULT_TENANT, target_id),
@@ -2125,6 +2169,21 @@ def create_app(
         if get_site_target(store, DEFAULT_TENANT, target_id) is None:
             raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
         return _capabilities_view(target_id)
+
+    @app.get("/api/site/targets/{target_id}/mcp", tags=["Capabilities"])
+    def api_target_mcp(target_id: str) -> dict:
+        """The MCP servers a target's *granted* capabilities light up for its
+        runs (names only — credentials are never returned). Drives the New Run
+        "auto-enabled from this site" hint."""
+        if get_site_target(store, DEFAULT_TENANT, target_id) is None:
+            raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
+        try:
+            from qa_agents.target_mcp import resolve_target_mcp  # noqa: PLC0415
+            resolved = resolve_target_mcp(store, target_id)
+        except ImportError:
+            resolved = {"server_ids": [], "servers": []}
+        return {"server_ids": resolved.get("server_ids", []),
+                "servers": resolved.get("servers", [])}
 
     @app.put(
         "/api/site/targets/{target_id}/capabilities/{capability_id}",

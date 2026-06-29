@@ -109,3 +109,37 @@ def test_revoke(store):
 
 def test_unknown_target_404(store):
     assert _client(store).get("/api/site/targets/ghost/capabilities").status_code == 404
+
+
+# ── P4: capability → MCP wiring surfaced in the view + a resolved endpoint ──
+def test_capabilities_view_includes_powers(store):
+    _target(store)
+    caps = {
+        x["capability_id"]: x
+        for x in _client(store).get("/api/site/targets/acme/capabilities").json()["capabilities"]
+    }
+    # A mapped capability advertises the MCP tool it powers…
+    powers = caps["openapi-spec"]["powers"]
+    assert any(p["server_id"] == "openapi" for p in powers)
+    # …and an unmapped one powers nothing.
+    assert caps["test-account"]["powers"] == []
+
+
+def test_target_mcp_endpoint_lists_granted_servers(store):
+    _target(store)
+    c = _client(store)
+    # Nothing granted yet → no servers.
+    assert c.get("/api/site/targets/acme/mcp").json()["server_ids"] == []
+    # Grant openapi-spec → the openapi server lights up (names only, no secret).
+    c.put(
+        "/api/site/targets/acme/capabilities/openapi-spec",
+        json={"status": "granted", "token": "https://acme.example/openapi.json"},
+    )
+    body = c.get("/api/site/targets/acme/mcp").json()
+    assert body["server_ids"] == ["openapi"]
+    assert body["servers"][0]["capabilities"] == ["openapi-spec"]
+    assert "openapi.json" not in str(body)  # credential never echoed
+
+
+def test_target_mcp_endpoint_404_unknown(store):
+    assert _client(store).get("/api/site/targets/ghost/mcp").status_code == 404

@@ -112,9 +112,10 @@ function CAPS(over = {}) {
       granted_count: 0, next_unlock: { capability_id: 'test-account', title: 'Test account login(s)', unlocks: 'Get past auth.', level: 1 },
     },
     capabilities: [
-      { capability_id: 'test-account', title: 'Test account login(s)', category: 'identity', level: 1, risk_class: 'sandbox-only', grant_kind: 'secret', unlocks: 'Get past auth.', status: 'available' },
-      { capability_id: 'app-logs', title: 'Application logs (read)', category: 'observability', level: 3, risk_class: 'read-only', grant_kind: 'secret', unlocks: 'Root-cause errors.', status: 'available' },
-      { capability_id: 'kube-exec', title: 'Kubernetes access', category: 'environment', level: 5, risk_class: 'write-control', grant_kind: 'connection', unlocks: 'Runtime inspection.', status: 'available' },
+      { capability_id: 'test-account', title: 'Test account login(s)', category: 'identity', level: 1, risk_class: 'sandbox-only', grant_kind: 'secret', unlocks: 'Get past auth.', status: 'available', powers: [] },
+      { capability_id: 'openapi-spec', title: 'API schema (OpenAPI / GraphQL)', category: 'api', level: 2, risk_class: 'read-only', grant_kind: 'url', unlocks: 'Contract-test the API.', status: over.openapi_status ?? 'available', powers: [{ server_id: 'openapi', display_name: 'OpenAPI surface explorer', friendly_name: 'API probing tool' }] },
+      { capability_id: 'app-logs', title: 'Application logs (read)', category: 'observability', level: 3, risk_class: 'read-only', grant_kind: 'secret', unlocks: 'Root-cause errors.', status: 'available', powers: [] },
+      { capability_id: 'kube-exec', title: 'Kubernetes access', category: 'environment', level: 5, risk_class: 'write-control', grant_kind: 'connection', unlocks: 'Runtime inspection.', status: 'available', powers: [] },
     ],
   }
 }
@@ -276,5 +277,23 @@ describe('<SiteTarget> capabilities', () => {
     await flushPromises()
     await openCapsTab(w)
     expect(w.find('[data-testid="suggested-caps"]').exists()).toBe(false)
+  })
+
+  it('shows which MCP tool a capability powers, and marks a granted one active', async () => {
+    // available + mapped → a "Powers …" line, no "active" badge yet.
+    let w = mountTarget()
+    await flushPromises()
+    await openCapsTab(w)
+    const powers = w.find('[data-testid="cap-openapi-spec-powers"]')
+    expect(powers.exists()).toBe(true)
+    expect(powers.text()).toContain('API probing tool') // plain, not jargon
+    expect(w.find('[data-testid="cap-openapi-spec-active"]').exists()).toBe(false)
+
+    // granted + mapped → the "active in runs" badge lights up.
+    mocks.getSiteCapabilities.mockResolvedValue(CAPS({ openapi_status: 'granted' }))
+    w = mountTarget()
+    await flushPromises()
+    await openCapsTab(w)
+    expect(w.find('[data-testid="cap-openapi-spec-active"]').exists()).toBe(true)
   })
 })

@@ -55,6 +55,14 @@ class MCPServer:
 
     ``tool_count`` is the number of tools the server exposes. Used in
     the catalog UI as a hint of capability surface area.
+
+    ``unlocked_by`` lists the ``capability_id``s (see
+    :mod:`qa_store.capabilities`) that, when *granted* for a target,
+    light this server up for that target's runs — the realisation of
+    the capabilities docstring's "a granted capability lights up an MCP
+    tool". Empty = not gated on any capability (availability follows the
+    ``default_enabled`` / ``persona_compat`` rules alone). See
+    :func:`server_ids_for_capabilities`.
     """
 
     id: str
@@ -63,6 +71,16 @@ class MCPServer:
     default_enabled: bool = True
     persona_compat: list[str] = field(default_factory=list)
     tool_count: int = 0
+    unlocked_by: tuple[str, ...] = ()
+    # A plain, benefit-oriented name for non-technical operators (the
+    # ``display_name`` is deliberately developer-facing — "Mailpit", "OpenAPI").
+    # Surfaced wherever a capability advertises the tool it lights up. Falls
+    # back to ``display_name`` via :meth:`friendly` when unset.
+    friendly_name: str = ""
+
+    @property
+    def friendly(self) -> str:
+        return self.friendly_name or self.display_name
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +114,8 @@ CATALOG: tuple[MCPServer, ...] = (
         default_enabled=True,
         persona_compat=[],
         tool_count=3,
+        unlocked_by=("sandbox-inbox", "sandbox-sending"),
+        friendly_name="email inbox tool",
     ),
     MCPServer(
         id="findings",
@@ -140,6 +160,8 @@ CATALOG: tuple[MCPServer, ...] = (
         default_enabled=False,
         persona_compat=["api-poker"],
         tool_count=3,
+        unlocked_by=("openapi-spec", "api-access"),
+        friendly_name="API probing tool",
     ),
     MCPServer(
         id="chrome_devtools",
@@ -239,3 +261,36 @@ def get_server(server_id: str) -> MCPServer:
 def server_ids() -> tuple[str, ...]:
     """Just the ids — useful for env-var validation in Slice C."""
     return tuple(s.id for s in CATALOG)
+
+
+# ---------------------------------------------------------------------------
+# Capability → MCP wiring (the "granted capability lights up a tool" bridge).
+#
+# ``CAPABILITY_ENV`` maps a granted ``capability_id`` to the harness env var its
+# vaulted credential populates. The harness ALREADY reads these env vars into
+# its Config and the build_*_server factories (qa_agents/config.py +
+# qa_agents/runner.py), so injecting the vaulted value as the matching env var
+# is all it takes to feed a capability's credential to its server — no runner
+# change needed. Only capabilities whose credential is a concrete URL/token the
+# server consumes appear here; a capability can unlock a server (``unlocked_by``)
+# without supplying an env credential (e.g. a sandbox the harness derives).
+# ---------------------------------------------------------------------------
+CAPABILITY_ENV: dict[str, str] = {
+    "openapi-spec": "QA_OPENAPI_URL",
+    "sandbox-inbox": "QA_MAILPIT_URL",
+}
+
+
+def server_ids_for_capabilities(capability_ids: object) -> tuple[str, ...]:
+    """The catalog server ids unlocked by the given granted ``capability_ids``
+    (any iterable of strings), in catalog order, de-duplicated."""
+    granted = set(capability_ids or ())
+    return tuple(
+        s.id for s in CATALOG if granted.intersection(s.unlocked_by)
+    )
+
+
+def servers_unlocked_by(capability_id: str) -> tuple[MCPServer, ...]:
+    """Every catalog server a single capability lights up (for the 'Powers …'
+    UI on a capability card)."""
+    return tuple(s for s in CATALOG if capability_id in s.unlocked_by)

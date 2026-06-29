@@ -39,6 +39,7 @@ const mocks = {
   deleteScenario: vi.fn(),
   listScenarios: vi.fn(),
   listSiteTargets: vi.fn(),
+  getTargetMcp: vi.fn(),
   updatePersona: vi.fn(),
 }
 
@@ -54,6 +55,7 @@ vi.mock('../api', () => ({
   deleteScenario: (...a) => mocks.deleteScenario(...a),
   listScenarios: (...a) => mocks.listScenarios(...a),
   listSiteTargets: (...a) => mocks.listSiteTargets(...a),
+  getTargetMcp: (...a) => mocks.getTargetMcp(...a),
   updatePersona: (...a) => mocks.updatePersona(...a),
 }))
 
@@ -109,6 +111,7 @@ function setup({ active = null, dbPersonas = DB_PERSONAS_ALL_ACTIVE } = {}) {
   mocks.listSiteTargets.mockResolvedValue([
     { target_id: 'acme', base_url: 'https://acme.test' },
   ])
+  mocks.getTargetMcp.mockResolvedValue({ server_ids: [], servers: [] })
   mocks.updatePersona.mockResolvedValue({})
 }
 
@@ -441,5 +444,34 @@ describe('<NewRun> — ?personas= deep link (#1822 follow-up)', () => {
     routeQuery = { personas: 'ghost' }
     const wrapper = await mountReady() // both activated
     expect(wrapper.find('[data-testid="cta-start"]').text()).toContain('Launch 2')
+  })
+})
+
+describe('<NewRun> — P4 capability-driven MCP auto-enable', () => {
+  it('forwards the resolved target_id so the server can auto-enable tools', async () => {
+    const wrapper = await mountReady() // defaults target to the acme site
+    await wrapper.find('[data-testid="cta-start"]').trigger('click')
+    await flushPromises()
+    expect(mocks.triggerRun.mock.calls[0][1].targetId).toBe('acme')
+  })
+
+  it('shows an "auto-enabled tools" note when the site has granted access', async () => {
+    setup({ active: null })
+    mocks.getTargetMcp.mockResolvedValue({
+      server_ids: ['openapi'],
+      servers: [{ server_id: 'openapi', display_name: 'OpenAPI surface explorer', friendly_name: 'API probing tool', capabilities: ['openapi-spec'] }],
+    })
+    const wrapper = mountNewRun()
+    await flushPromises()
+    const note = wrapper.find('[data-testid="auto-mcp-note"]')
+    expect(note.exists()).toBe(true)
+    // Plain, benefit-oriented name — not the "OpenAPI surface explorer" jargon.
+    expect(note.text()).toContain('API probing tool')
+    expect(note.text()).not.toContain('OpenAPI surface explorer')
+  })
+
+  it('hides the note when the site has no granted access', async () => {
+    const wrapper = await mountReady() // getTargetMcp default → no servers
+    expect(wrapper.find('[data-testid="auto-mcp-note"]').exists()).toBe(false)
   })
 })
