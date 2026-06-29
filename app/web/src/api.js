@@ -509,3 +509,32 @@ export function exploreSiteTarget(targetId) {
     .post(`/site/targets/${encodeURIComponent(targetId)}/explore`)
     .then((r) => r.data)
 }
+
+// ── Capabilities — grant deeper access ────────────────────────────────────
+// Returns { depth, capabilities } (catalog merged with grant status). Secrets
+// are vaulted server-side; tokens are never returned.
+export function getSiteCapabilities(targetId) {
+  return http
+    .get(`/site/targets/${encodeURIComponent(targetId)}/capabilities`)
+    .then((r) => r.data)
+}
+export function setCapability(targetId, capabilityId, payload) {
+  return http
+    .put(
+      `/site/targets/${encodeURIComponent(targetId)}/capabilities/${encodeURIComponent(capabilityId)}`,
+      payload,
+    )
+    .then((r) => r.data)
+}
+export function addCustomCapability(targetId, payload) {
+  return http
+    .post(`/site/targets/${encodeURIComponent(targetId)}/capabilities`, payload)
+    .then((r) => r.data)
+}
+export function revokeCapability(targetId, capabilityId) {
+  return http
+    .delete(
+      `/site/targets/${encodeURIComponent(targetId)}/capabilities/${encodeURIComponent(capabilityId)}`,
+    )
+    .then((r) => r.data)
+}

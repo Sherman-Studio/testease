@@ -160,6 +160,10 @@ _QA_CONFIG = "qa_config"             # instance-level config (one doc per
                                      # (tenant, key)): the LLM backend choice +
                                      # a vault POINTER to the BYOK token. See
                                      # qa_store.app_config.
+_CAPABILITY_CATALOG = "capability_catalog"  # menu of grantable capabilities
+                                     # (seeded baseline + operator custom).
+_SITE_CAPABILITIES = "site_capabilities"    # per-target grants (proposed/
+                                     # granted/declined); secrets vaulted.
 # Allowed enum-ish values, kept narrow on purpose (consistency across rows).
 SITE_AUTH_METHODS = ("none", "form", "magic_link", "oauth")
 SITE_SURFACE_KINDS = ("page", "form", "auth_flow", "api", "entity")
@@ -292,6 +296,18 @@ class Store:
         """``qa_config`` — instance-level config (LLM backend + a vault pointer
         to the BYOK token). See ``qa_store.app_config``."""
         return self.db[_QA_CONFIG]
+
+    @property
+    def capability_catalog(self):
+        """``capability_catalog`` — the menu of grantable capabilities (seeded
+        baseline + operator-added custom). See ``qa_store.capabilities``."""
+        return self.db[_CAPABILITY_CATALOG]
+
+    @property
+    def site_capabilities(self):
+        """``site_capabilities`` — per-target capability grants
+        (proposed/granted/declined); secrets vaulted (credential_ref)."""
+        return self.db[_SITE_CAPABILITIES]
 
     def close(self) -> None:
         self.client.close()
@@ -490,6 +506,21 @@ def _ensure_indexes(store: Store) -> None:
     store.qa_config.create_index(
         [("tenant_id", ASCENDING), ("key", ASCENDING)],
         unique=True, name="tenant_key_unique",
+    )
+    # ── Capabilities — the catalog (unique capability_id) + per-target grants.
+    store.capability_catalog.create_index(
+        [("capability_id", ASCENDING)], unique=True, name="capability_id_unique",
+    )
+    store.site_capabilities.create_index(
+        [("tenant_id", ASCENDING), ("target_id", ASCENDING)], name="tenant_target",
+    )
+    store.site_capabilities.create_index(
+        [
+            ("tenant_id", ASCENDING),
+            ("target_id", ASCENDING),
+            ("capability_id", ASCENDING),
+        ],
+        unique=True, name="tenant_target_capability_unique",
     )
 # ---------------------------------------------------------------------------
 # Atlas Search vector indexes — distinct from the compound indexes above, which

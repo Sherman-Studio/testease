@@ -64,10 +64,10 @@
         <span
           v-if="t.lifecycle"
           class="pill text-[10px] uppercase tracking-wide text-brand-700"
+          :title="lifecycleHint(t.lifecycle)"
         >
           {{ t.lifecycle }}
         </span>
-        <span class="pill text-[10px]">{{ t.target_id }}</span>
         <span class="text-ink-400" aria-hidden="true">→</span>
       </router-link>
     </div>
@@ -131,6 +131,19 @@ import HelpTip from '../components/HelpTip.vue'
 
 const router = useRouter()
 const targets = ref([])
+
+// One-line meaning for each onboarding state (the list's status badge tooltip).
+const _LIFECYCLE_HINTS = {
+  registered: 'Added, not yet explored — open it and run Explore.',
+  exploring: 'The explorer is probing the site.',
+  'awaiting-answers': 'Explored — waiting for you to answer its questionnaire.',
+  configured: 'Configured and ready to run the personas.',
+  testing: 'Persona runs are happening.',
+  're-explore': 'Marked for another discovery pass.',
+}
+function lifecycleHint(state) {
+  return _LIFECYCLE_HINTS[state] || 'Onboarding status'
+}
 const loading = ref(true)
 const error = ref('')
 

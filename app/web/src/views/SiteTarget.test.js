@@ -21,6 +21,10 @@ const mocks = {
   updateSiteKnowledge: vi.fn(),
   deleteSiteKnowledge: vi.fn(),
   exploreSiteTarget: vi.fn(),
+  getSiteCapabilities: vi.fn(),
+  setCapability: vi.fn(),
+  addCustomCapability: vi.fn(),
+  revokeCapability: vi.fn(),
 }
 
 vi.mock('../api.js', () => ({
@@ -36,6 +40,10 @@ vi.mock('../api.js', () => ({
   updateSiteKnowledge: (...a) => mocks.updateSiteKnowledge(...a),
   deleteSiteKnowledge: (...a) => mocks.deleteSiteKnowledge(...a),
   exploreSiteTarget: (...a) => mocks.exploreSiteTarget(...a),
+  getSiteCapabilities: (...a) => mocks.getSiteCapabilities(...a),
+  setCapability: (...a) => mocks.setCapability(...a),
+  addCustomCapability: (...a) => mocks.addCustomCapability(...a),
+  revokeCapability: (...a) => mocks.revokeCapability(...a),
 }))
 
 import SiteTarget from './SiteTarget.vue'
@@ -90,7 +98,26 @@ beforeEach(() => {
     lifecycle: 'awaiting-answers', fetched: true, title: 'Acme',
     detected: ['login'], counts: { surfaces: 2, flows: 1, knowledge: 1, questions: 3 },
   })
+  mocks.getSiteCapabilities.mockResolvedValue(CAPS())
+  mocks.setCapability.mockImplementation(async () => CAPS({ depth_level: 3 }))
+  mocks.addCustomCapability.mockResolvedValue(CAPS())
+  mocks.revokeCapability.mockResolvedValue(CAPS())
 })
+
+function CAPS(over = {}) {
+  return {
+    depth: {
+      depth_level: over.depth_level ?? 0, depth_label: 'Black-box',
+      levels: ['Black-box', 'Authenticated', 'Instrumented inputs', 'Observability', 'State verification', 'Environment control'],
+      granted_count: 0, next_unlock: { capability_id: 'test-account', title: 'Test account login(s)', unlocks: 'Get past auth.', level: 1 },
+    },
+    capabilities: [
+      { capability_id: 'test-account', title: 'Test account login(s)', category: 'identity', level: 1, risk_class: 'sandbox-only', grant_kind: 'secret', unlocks: 'Get past auth.', status: 'available' },
+      { capability_id: 'app-logs', title: 'Application logs (read)', category: 'observability', level: 3, risk_class: 'read-only', grant_kind: 'secret', unlocks: 'Root-cause errors.', status: 'available' },
+      { capability_id: 'kube-exec', title: 'Kubernetes access', category: 'environment', level: 5, risk_class: 'write-control', grant_kind: 'connection', unlocks: 'Runtime inspection.', status: 'available' },
+    ],
+  }
+}
 
 describe('<SiteTarget> Questions tab', () => {
   it('shows the lifecycle badge + rollup and renders grouped questions', async () => {
@@ -178,5 +205,55 @@ describe('<SiteTarget> explorer', () => {
     expect(mocks.exploreSiteTarget).toHaveBeenCalledWith('acme')
     expect(mocks.listSiteQuestions).toHaveBeenCalled() // reloaded after exploring
     expect(w.find('[data-testid="explore-summary"]').exists()).toBe(true)
+  })
+})
+
+describe('<SiteTarget> capabilities', () => {
+  async function openCapsTab(w) {
+    await w.findAll('button').find((b) => b.text().startsWith('Capabilities')).trigger('click')
+  }
+
+  it('shows the depth pill + ladder and the catalog grouped by level', async () => {
+    const w = mountTarget()
+    await flushPromises()
+    expect(w.find('[data-testid="depth-pill"]').text()).toContain('Black-box')
+    await openCapsTab(w)
+    expect(w.find('[data-testid="capabilities-tab"]').exists()).toBe(true)
+    expect(w.find('[data-testid="depth-ladder"]').exists()).toBe(true)
+    expect(w.find('[data-testid="cap-test-account"]').exists()).toBe(true)
+    expect(w.find('[data-testid="cap-app-logs"]').exists()).toBe(true)
+  })
+
+  it('connects (grants) a capability with a vaulted secret', async () => {
+    const w = mountTarget()
+    await flushPromises()
+    await openCapsTab(w)
+    await w.find('[data-testid="cap-test-account-connect"]').trigger('click')
+    await w.find('[data-testid="cap-test-account-input"]').setValue('admin:pw')
+    await w.find('[data-testid="cap-test-account-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.setCapability).toHaveBeenCalledWith('acme', 'test-account', { status: 'granted', token: 'admin:pw' })
+  })
+
+  it('adds a custom capability', async () => {
+    const w = mountTarget()
+    await flushPromises()
+    await openCapsTab(w)
+    await w.find('[data-testid="cap-custom-open"]').trigger('click')
+    await w.find('[data-testid="cap-custom-title"]').setValue('Admin GraphQL')
+    await w.find('[data-testid="cap-custom-add"]').trigger('click')
+    await flushPromises()
+    expect(mocks.addCustomCapability).toHaveBeenCalledWith('acme', expect.objectContaining({ title: 'Admin GraphQL' }))
+  })
+
+  it('hides sensitive infra (L4-5) behind an Advanced-access toggle', async () => {
+    const w = mountTarget()
+    await flushPromises()
+    await openCapsTab(w)
+    // L1/L3 visible; the alarming L5 (kube) is hidden until you expand.
+    expect(w.find('[data-testid="cap-test-account"]').exists()).toBe(true)
+    expect(w.find('[data-testid="cap-kube-exec"]').exists()).toBe(false)
+    await w.find('[data-testid="advanced-toggle"]').trigger('click')
+    expect(w.find('[data-testid="cap-kube-exec"]').exists()).toBe(true)
   })
 })
