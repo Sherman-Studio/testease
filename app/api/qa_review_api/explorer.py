@@ -20,6 +20,11 @@ from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 import httpx
+from qa_store.capabilities import (
+    CAPABILITY_CATALOG,
+    list_site_capabilities,
+    set_capability_status,
+)
 from qa_store.schema import DEFAULT_TENANT, Store
 from qa_store.site_model import (
     get_site_target,
@@ -31,6 +36,19 @@ from qa_store.site_model import (
 from qa_store.site_questions import upsert_site_question
 
 log = logging.getLogger(__name__)
+
+# The explorer *proposes* (never grants) capabilities whose ``proposed_when`` tag
+# matches an affordance it detected — turning the 30-item catalog into a short,
+# site-tailored "suggested" list so a newcomer isn't staring at the whole wall.
+# Earn-trust: it never auto-proposes above L3 (no read-only DB / infra access);
+# the operator reaches for those deliberately. Discovery proposes, the human grants.
+_MAX_AUTO_PROPOSE_LEVEL = 3
+_DETECTED_TO_SIGNALS = {
+    "login": {"login_form"},
+    "signup": {"login_form", "email"},  # new accounts need a test login + an inbox
+    "checkout": {"payments"},
+    "api": {"api"},
+}
 
 _USER_AGENT = "TestEase-Explorer/0.1 (+https://github.com/Sherman-Studio/testease)"
 _FLOW_KEYWORDS = {
@@ -51,6 +69,8 @@ class _Scan(HTMLParser):
         super().__init__()
         self._title_parts: list[str] = []
         self._in_title = False
+        self._title_done = False  # capture only the FIRST <title> (the document
+        # head one) — pages embed extra <title> elements inside inline SVG icons.
         self.forms: list[dict] = []
         self._cur_form: dict | None = None
         self.links: list[tuple[str, str]] = []
@@ -59,7 +79,7 @@ class _Scan(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
-        if tag == "title":
+        if tag == "title" and not self._title_done:
             self._in_title = True
         elif tag == "form":
             self._cur_form = {"has_password": False, "action": a.get("action", "")}
@@ -71,8 +91,9 @@ class _Scan(HTMLParser):
             self._a_text = []
 
     def handle_endtag(self, tag):
-        if tag == "title":
+        if tag == "title" and self._in_title:
             self._in_title = False
+            self._title_done = True
         elif tag == "form" and self._cur_form is not None:
             self.forms.append(self._cur_form)
             self._cur_form = None
@@ -113,6 +134,39 @@ def _detect(scan: _Scan) -> set[str]:
             if any(k in hay for k in kws):
                 detected.add(flow)
     return detected
+
+
+def _propose_capabilities(
+    store: Store, tenant_id: str, target_id: str, detected: set[str],
+) -> int:
+    """Propose the catalog capabilities relevant to what was detected. Idempotent
+    and non-destructive: skips anything the operator (or a prior pass) has already
+    acted on, and never proposes above ``_MAX_AUTO_PROPOSE_LEVEL``. Returns how
+    many fresh proposals it made."""
+    signals: set[str] = set()
+    for d in detected:
+        signals |= _DETECTED_TO_SIGNALS.get(d, set())
+    if not signals:
+        return 0
+    acted = {
+        c["capability_id"]
+        for c in list_site_capabilities(store, tenant_id, target_id)
+        if c.get("status") in {"granted", "declined", "not_applicable", "proposed"}
+    }
+    n = 0
+    for cap in CAPABILITY_CATALOG:
+        if (
+            cap.get("proposed_when") in signals
+            and cap["level"] <= _MAX_AUTO_PROPOSE_LEVEL
+            and cap["capability_id"] not in acted
+        ):
+            set_capability_status(
+                store, tenant_id=tenant_id, target_id=target_id,
+                capability_id=cap["capability_id"], status="proposed",
+                proposed_by="explorer",
+            )
+            n += 1
+    return n
 
 
 def explore_target(
@@ -238,6 +292,8 @@ def explore_target(
             options=options, required=required, order=order, generated_by="explorer",
         )
 
+    n_proposed = _propose_capabilities(store, tenant_id, target_id, detected)
+
     set_target_lifecycle(store, tenant_id, target_id, "awaiting-answers")
     return {
         "lifecycle": "awaiting-answers",
@@ -249,5 +305,6 @@ def explore_target(
             "flows": len(flows),
             "knowledge": 1,
             "questions": len(questions),
+            "capabilities_proposed": n_proposed,
         },
     }

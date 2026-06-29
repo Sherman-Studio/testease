@@ -13,7 +13,9 @@
       </h1>
       <p class="mt-1 text-sm text-ink-600">
         Choose how Test Ease talks to Claude and provide the credential it runs
-        on. Nothing runs (exploring, persona runs) until this is set.
+        on. Exploring a site works without this — it's the <strong>AI persona
+        runs</strong> (the fictional users actually testing your site) that need
+        a credential.
       </p>
     </header>
 
@@ -80,6 +82,19 @@
             </template>
             <template v-else-if="cfg.token_source === 'vault'">
               A token is saved. Leave blank to keep it, or paste a new one to replace it.
+            </template>
+          </p>
+          <p class="help mt-1" data-testid="token-help">
+            <template v-if="form.backend === 'api'">
+              Where to get this: create an API key in the
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">Anthropic Console</a>
+              (billed per token).
+            </template>
+            <template v-else>
+              Where to get this: with the
+              <a href="https://docs.anthropic.com/en/docs/claude-code/overview" target="_blank" rel="noreferrer">Claude Code CLI</a>
+              installed, run <code>claude setup-token</code> in a terminal and paste
+              the result here. Needs a Claude Pro/Max subscription; runs at flat price.
             </template>
           </p>
         </div>

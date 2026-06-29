@@ -66,14 +66,20 @@
           type="url"
           class="input max-w-2xl font-mono"
           maxlength="500"
-          :placeholder="DEFAULT_TARGET_URL"
+          :placeholder="TARGET_PLACEHOLDER"
           v-model.trim="targetUrl"
           aria-label="Target URL"
         />
         <p class="help mt-1">
-          Cluster-internal URLs work; public URLs work too. Default:
-          <code class="rounded bg-ink-200 px-1 py-0.5 font-mono text-brand-800">{{ DEFAULT_TARGET_URL }}</code>
-          (the in-cluster Test Ease sandbox).
+          <template v-if="siteTargets.length">
+            Defaults to a site you've added. Pick another, or paste any URL —
+            public or cluster-internal both work.
+          </template>
+          <template v-else>
+            Paste the URL of the site to test (public or cluster-internal both
+            work), or <router-link to="/site">add it under Sites</router-link>
+            first to explore it.
+          </template>
         </p>
 
         <!-- Presets — saved persona + coverage combos. #1822 retired the
@@ -509,7 +515,7 @@
         <div class="cta-summary">
           <strong class="font-display">{{ runLabel }}</strong>
           <span class="muted">
-            against <code>{{ targetUrl || DEFAULT_TARGET_URL }}</code>
+            against <code>{{ targetUrl || '(no site yet — enter a URL above)' }}</code>
           </span>
           <div
             v-if="!selected.length"
@@ -535,15 +541,17 @@
           </button>
           <button
             class="cta-start"
-            :disabled="busy || !!active || ceilingExceeded || !selected.length"
+            :disabled="busy || !!active || ceilingExceeded || !selected.length || !targetUrl"
             :title="
               active
                 ? 'A run is already in progress — wait for it to finish before starting another.'
                 : ceilingExceeded
                   ? `pods × concurrency exceeds the ${MAX_SIMULTANEOUS_PERSONAS}-persona simultaneous ceiling — lower one to launch`
-                  : !selected.length
-                    ? 'Pick at least one persona to launch.'
-                    : undefined
+                  : !targetUrl
+                    ? 'Enter the URL of the site to test first.'
+                    : !selected.length
+                      ? 'Pick at least one persona to launch.'
+                      : undefined
             "
             data-testid="cta-start"
             @click="trigger"
@@ -599,6 +607,7 @@ import {
   listMCPServers,
   listPersonas,
   listScenarios,
+  listSiteTargets,
   triggerRun,
   updatePersona,
 } from '../api'
@@ -614,10 +623,9 @@ const MAX_LOG_LINES = 2000
 // guards pods × concurrency up-front; the server enforces it (422).
 const MAX_SIMULTANEOUS_PERSONAS = 8
 
-// #1047 — the in-cluster Test Ease sandbox, pre-populated so an operator
-// hitting Launch without changing anything gets the historical
-// "test the sandbox" behaviour explicitly.
-const DEFAULT_TARGET_URL = 'https://sandbox.slyreply.ai'
+// Neutral placeholder only — the target defaults to a site the operator has
+// actually added (see onMounted), never a hardcoded third-party URL.
+const TARGET_PLACEHOLDER = 'https://your-site.example.com'
 
 // #1047 / #1115 — max-turns slider calibration. See the help text: this
 // is a runaway ceiling, not a target.
@@ -703,7 +711,10 @@ const reportModel = ref(null)
 const maxTurns = ref(null)
 const runDurationS = ref(null)
 const runNotes = ref('')
-const targetUrl = ref(DEFAULT_TARGET_URL)
+const targetUrl = ref('')
+// Sites the operator has added — used to default the target to a real site of
+// theirs (and offer quick-pick chips) instead of a hardcoded URL.
+const siteTargets = ref([])
 // #1031 — per-run MCP server selection, pre-populated with catalog
 // defaults so an untouched panel reproduces historical behaviour.
 const mcpCatalog = ref([])
@@ -1159,6 +1170,18 @@ onMounted(async () => {
     selected.value = activatedIds.value.filter((id) =>
       personaIds.value.includes(id),
     )
+  }
+  // Default the target to a site the operator has actually added (deep-linkable
+  // via /new-run?target=<id>), so Launch points at *their* site — never a
+  // leftover hardcoded URL.
+  try {
+    siteTargets.value = await listSiteTargets()
+    const wanted = String(route.query.target ?? '').trim()
+    const pick =
+      siteTargets.value.find((t) => t.target_id === wanted) ?? siteTargets.value[0]
+    if (pick?.base_url && !targetUrl.value) targetUrl.value = pick.base_url
+  } catch {
+    /* sites are a convenience here; the URL field still works free-form */
   }
   _loadMcpCatalogOnce()
   _loadPresets()
