@@ -312,6 +312,23 @@ describe('<NewRun> — #1822 explicit selection pre-seeded from activation', () 
     expect(wrapper.text()).toContain('2 of 2 selected')
   })
 
+  it('pre-seeds from the catalog default-on set when nobody is activated', async () => {
+    // A fresh operator has activated nobody (is_active=false) but the catalog
+    // marks personas is_default — so New Run still arrives launch-ready.
+    setup({
+      dbPersonas: [
+        { persona_id: 'alice', is_active: false, is_default: true, hidden: false },
+        { persona_id: 'bob', is_active: false, is_default: false, hidden: false },
+      ],
+    })
+    const wrapper = mountNewRun()
+    await flushPromises()
+    // alice (default) pre-selected → Launch is live; bob (not default) is not.
+    const start = wrapper.find('[data-testid="cta-start"]')
+    expect(start.text()).toBe('▶ Launch 1')
+    expect(start.attributes('disabled')).toBeUndefined()
+  })
+
   it('hidden personas never pre-seed even when is_active', async () => {
     setup({
       dbPersonas: [

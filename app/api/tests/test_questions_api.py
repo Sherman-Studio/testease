@@ -161,3 +161,49 @@ def test_status_rollup_updates(store):
     c.post("/api/site/targets/acme/questions/q1/answer", json={"answer": "a"})
     st = c.get("/api/site/targets/acme/questions").json()["status"]
     assert st == {"total": 2, "answered": 1, "open": 1, "skipped": 0, "required_open": 0}
+
+
+# ── auto-advance to configured when the required questionnaire is complete ──
+def _awaiting(c, target_id="acme"):
+    c.post(f"/api/site/targets/{target_id}/lifecycle", json={"lifecycle": "awaiting-answers"})
+
+
+def test_answering_last_required_advances_to_configured(store):
+    c = _client(store)
+    _mk_target(store)
+    _awaiting(c)
+    _mk_question(c, question_id="q1", kind="free_text", required=True)
+    _mk_question(c, question_id="q2", kind="boolean", required=False)
+    c.post("/api/site/targets/acme/questions/q1/answer", json={"answer": "ops@acme.test"})
+    body = c.get("/api/site/targets/acme/questions").json()
+    assert body["status"]["required_open"] == 0
+    assert body["lifecycle"] == "configured"  # the Run CTA unlocks
+
+
+def test_skipping_last_required_also_advances(store):
+    c = _client(store)
+    _mk_target(store)
+    _awaiting(c)
+    _mk_question(c, question_id="q1", kind="free_text", required=True)
+    c.post("/api/site/targets/acme/questions/q1/skip")
+    assert c.get("/api/site/targets/acme/questions").json()["lifecycle"] == "configured"
+
+
+def test_no_advance_while_a_required_question_is_open(store):
+    c = _client(store)
+    _mk_target(store)
+    _awaiting(c)
+    _mk_question(c, question_id="q1", kind="free_text", required=True)
+    _mk_question(c, question_id="q2", kind="free_text", required=True)
+    c.post("/api/site/targets/acme/questions/q1/answer", json={"answer": "x"})
+    assert c.get("/api/site/targets/acme/questions").json()["lifecycle"] == "awaiting-answers"
+
+
+def test_answer_does_not_override_a_later_lifecycle(store):
+    # An operator who already moved to 'testing' isn't rewound by a late answer.
+    c = _client(store)
+    _mk_target(store)
+    _mk_question(c, question_id="q1", kind="free_text", required=True)
+    c.post("/api/site/targets/acme/lifecycle", json={"lifecycle": "testing"})
+    c.post("/api/site/targets/acme/questions/q1/answer", json={"answer": "x"})
+    assert c.get("/api/site/targets/acme/questions").json()["lifecycle"] == "testing"
