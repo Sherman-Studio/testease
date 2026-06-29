@@ -20,6 +20,7 @@ const mocks = {
   createSiteKnowledge: vi.fn(),
   updateSiteKnowledge: vi.fn(),
   deleteSiteKnowledge: vi.fn(),
+  exploreSiteTarget: vi.fn(),
 }
 
 vi.mock('../api.js', () => ({
@@ -34,6 +35,7 @@ vi.mock('../api.js', () => ({
   createSiteKnowledge: (...a) => mocks.createSiteKnowledge(...a),
   updateSiteKnowledge: (...a) => mocks.updateSiteKnowledge(...a),
   deleteSiteKnowledge: (...a) => mocks.deleteSiteKnowledge(...a),
+  exploreSiteTarget: (...a) => mocks.exploreSiteTarget(...a),
 }))
 
 import SiteTarget from './SiteTarget.vue'
@@ -84,6 +86,10 @@ beforeEach(() => {
   mocks.answerSiteQuestion.mockResolvedValue({})
   mocks.skipSiteQuestion.mockResolvedValue({})
   mocks.setTargetLifecycle.mockResolvedValue({})
+  mocks.exploreSiteTarget.mockResolvedValue({
+    lifecycle: 'awaiting-answers', fetched: true, title: 'Acme',
+    detected: ['login'], counts: { surfaces: 2, flows: 1, knowledge: 1, questions: 3 },
+  })
 })
 
 describe('<SiteTarget> Questions tab', () => {
@@ -141,5 +147,36 @@ describe('<SiteTarget> Questions tab', () => {
     await wrapper.find('[data-testid="lifecycle-select"]').setValue('configured')
     await flushPromises()
     expect(mocks.setTargetLifecycle).toHaveBeenCalledWith('acme', 'configured')
+  })
+})
+
+describe('<SiteTarget> explorer', () => {
+  function registered() {
+    return { questions: [], status: { total: 0, answered: 0, open: 0, skipped: 0, required_open: 0 },
+      lifecycle: 'registered', lifecycle_states: QUESTIONNAIRE.lifecycle_states }
+  }
+
+  it('shows the Explore button while registered, hides it once configured', async () => {
+    mocks.listSiteQuestions.mockResolvedValue(registered())
+    const w = mountTarget()
+    await flushPromises()
+    expect(w.find('[data-testid="explore-btn"]').exists()).toBe(true)
+    // The default fixture (awaiting-answers) is past the explore stage.
+    mocks.listSiteQuestions.mockResolvedValue(structuredClone(QUESTIONNAIRE))
+    const w2 = mountTarget()
+    await flushPromises()
+    expect(w2.find('[data-testid="explore-btn"]').exists()).toBe(false)
+  })
+
+  it('runs the explorer and reloads the model', async () => {
+    mocks.listSiteQuestions.mockResolvedValue(registered())
+    const w = mountTarget()
+    await flushPromises()
+    mocks.listSiteQuestions.mockClear()
+    await w.find('[data-testid="explore-btn"]').trigger('click')
+    await flushPromises()
+    expect(mocks.exploreSiteTarget).toHaveBeenCalledWith('acme')
+    expect(mocks.listSiteQuestions).toHaveBeenCalled() // reloaded after exploring
+    expect(w.find('[data-testid="explore-summary"]').exists()).toBe(true)
   })
 })

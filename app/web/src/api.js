@@ -501,3 +501,11 @@ export function setTargetLifecycle(targetId, lifecycle) {
     .post(`/site/targets/${encodeURIComponent(targetId)}/lifecycle`, { lifecycle })
     .then((r) => r.data)
 }
+
+// Run the heuristic explorer — bootstrap the model + questionnaire from the
+// site's homepage and advance the lifecycle to awaiting-answers.
+export function exploreSiteTarget(targetId) {
+  return http
+    .post(`/site/targets/${encodeURIComponent(targetId)}/explore`)
+    .then((r) => r.data)
+}
