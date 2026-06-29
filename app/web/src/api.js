@@ -63,6 +63,13 @@ export function getActiveRun() {
   return http.get('/runs/active').then((r) => r.data.active)
 }
 
+// Whether this deployment can actually dispatch persona runs. The local-first
+// docker stack has no Kubernetes cluster, so the New Run form uses this to
+// explain that up front instead of failing at the Launch click.
+export function getRunAvailability() {
+  return http.get('/runs/availability').then((r) => r.data)
+}
+
 // Per-run overrides — all optional. Omit a field (or pass null/undefined) and
 // the harness uses the pod-spec default for that knob.
 //

@@ -186,6 +186,16 @@ class AdminWipeRequest(BaseModel):
 # ---------------------------------------------------------------------------
 _SCENARIO_ID_PATTERN = r"^[a-z][a-z0-9-]*$"
 
+# Plain-language stand-in for the raw kube-config error when this deployment
+# can't reach a cluster to dispatch runs (e.g. the local-first docker stack).
+# Everything else in the control room works without a cluster.
+_RUNS_UNAVAILABLE_MSG = (
+    "Persona runs execute on a Kubernetes cluster, which this deployment can't "
+    "reach. Exploring sites, the Site Model, capabilities, and the rest of the "
+    "control room all work without it — but launching a run needs a cluster "
+    "(or run the harness directly with `docker compose --profile run`)."
+)
+
 
 class ScenarioCreateRequest(BaseModel):
     """Body for ``POST /api/scenarios``."""
@@ -732,6 +742,22 @@ def create_app(
         except ClusterUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    @app.get(
+        "/api/runs/availability",
+        tags=["Runs"],
+        summary="Whether this deployment can actually dispatch persona runs.",
+    )
+    def api_run_availability() -> dict:
+        """Persona runs execute as Kubernetes Jobs; the local-first
+        ``docker compose`` stack has no cluster, so they can't launch here. The
+        UI calls this to explain that **up front** rather than letting the
+        operator complete the whole funnel and hit a cryptic error at Launch."""
+        try:
+            run_control.active_run()  # cheapest probe that exercises cluster access
+            return {"available": True, "reason": None}
+        except ClusterUnavailable:
+            return {"available": False, "reason": _RUNS_UNAVAILABLE_MSG}
+
     @app.post(
         "/api/runs/trigger",
         tags=["Runs"],
@@ -860,7 +886,9 @@ def create_app(
                     ),
                 )
         except ClusterUnavailable as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=503, detail=f"{_RUNS_UNAVAILABLE_MSG} (cluster: {exc})",
+            ) from exc
 
         # P4 — light up the MCP servers this target has *granted* capabilities
         # for, and inject their vaulted credentials as the env vars the harness
@@ -914,7 +942,9 @@ def create_app(
         except RunAlreadyActive as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ClusterUnavailable as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=503, detail=f"{_RUNS_UNAVAILABLE_MSG} (cluster: {exc})",
+            ) from exc
         except RunControlError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
