@@ -91,6 +91,7 @@ export function triggerRun(
     runNotes,
     mandatoryActionIds,
     targetUrl,
+    targetId,
     enabledMCPServers,
   } = {},
 ) {
@@ -116,6 +117,12 @@ export function triggerRun(
   // from a paste doesn't 422 on the server-side http(s) pattern.
   if (targetUrl != null && targetUrl.trim() !== '') {
     body.target_url = targetUrl.trim()
+  }
+  // P4 — the registered target this run is for. When set, the server
+  // auto-enables the MCP servers this target has granted capabilities for and
+  // injects their vaulted credentials. Omitted ⇒ a plain URL-only run.
+  if (targetId != null && targetId !== '') {
+    body.target_id = targetId
   }
   // #1031 — only forward when the operator made an explicit selection
   // that's NOT the catalog defaults. An empty list / null defers to
@@ -516,6 +523,13 @@ export function exploreSiteTarget(targetId) {
 export function getSiteCapabilities(targetId) {
   return http
     .get(`/site/targets/${encodeURIComponent(targetId)}/capabilities`)
+    .then((r) => r.data)
+}
+// P4 — the MCP servers a target's granted capabilities light up for its runs
+// (names only; credentials never returned). Drives the New Run auto-enable hint.
+export function getTargetMcp(targetId) {
+  return http
+    .get(`/site/targets/${encodeURIComponent(targetId)}/mcp`)
     .then((r) => r.data)
 }
 export function setCapability(targetId, capabilityId, payload) {

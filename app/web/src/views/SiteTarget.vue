@@ -516,6 +516,13 @@
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-ink-900">{{ cap.title }}</p>
                   <p class="mt-0.5 text-xs text-ink-500">{{ cap.unlocks }}</p>
+                  <p
+                    v-if="cap.powers && cap.powers.length"
+                    class="mt-1 text-[11px] text-brand-700"
+                    :data-testid="`cap-${cap.capability_id}-powers`"
+                  >
+                    🔌 Grant this to switch on the {{ powersLabel(cap) }} for your test runs.
+                  </p>
                 </div>
                 <span class="pill shrink-0 text-[10px]" :class="riskClass(cap.risk_class)">
                   {{ cap.risk_class }}
@@ -549,8 +556,11 @@
                   >
                     Connect
                   </button>
-                  <button class="btn-ghost btn" @click="setStatus(cap, 'not_applicable')">
-                    Not applicable
+                  <button
+                    class="text-xs text-ink-400 underline underline-offset-2 hover:text-ink-600"
+                    @click="setStatus(cap, 'not_applicable')"
+                  >
+                    Not for my site
                   </button>
                 </template>
               </div>
@@ -591,6 +601,13 @@
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-ink-900">{{ cap.title }}</p>
                   <p class="mt-0.5 text-xs text-ink-500">{{ cap.unlocks }}</p>
+                  <p
+                    v-if="cap.powers && cap.powers.length"
+                    class="mt-1 text-[11px] text-brand-700"
+                    :data-testid="`cap-${cap.capability_id}-powers`"
+                  >
+                    🔌 Grant this to switch on the {{ powersLabel(cap) }} for your test runs.
+                  </p>
                 </div>
                 <span class="pill shrink-0 text-[10px]" :class="riskClass(cap.risk_class)">
                   {{ cap.risk_class }}
@@ -599,6 +616,11 @@
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <template v-if="cap.status === 'granted'">
                   <span class="pill text-[10px] text-emerald-400">granted ✓</span>
+                  <span
+                    v-if="cap.powers && cap.powers.length"
+                    class="pill text-[10px] text-brand-700"
+                    :data-testid="`cap-${cap.capability_id}-active`"
+                  >● active in runs</span>
                   <button class="btn-ghost btn" :disabled="busyCapId === cap.capability_id" @click="revokeCap(cap)">
                     Revoke
                   </button>
@@ -632,10 +654,10 @@
                   </button>
                   <button
                     v-if="cap.status === 'available' || cap.status === 'proposed'"
-                    class="btn-ghost btn"
+                    class="text-xs text-ink-400 underline underline-offset-2 hover:text-ink-600"
                     @click="setStatus(cap, 'not_applicable')"
                   >
-                    Not applicable
+                    Not for my site
                   </button>
                   <span v-if="cap.status === 'proposed'" class="pill text-[10px] text-amber-400">proposed</span>
                   <span
@@ -838,6 +860,11 @@ function capsByLevel(lvl) {
   return capView.value.capabilities.filter(
     (c) => c.level === lvl && c.status !== 'proposed',
   )
+}
+function powersLabel(cap) {
+  // The MCP tool(s) a granted capability lights up for the personas' runs.
+  // Prefer the plain, benefit-oriented name over the developer display name.
+  return (cap.powers || []).map((p) => p.friendly_name || p.display_name).join(', ')
 }
 function riskClass(risk) {
   return {

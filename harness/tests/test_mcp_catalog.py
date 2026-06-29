@@ -5,11 +5,14 @@ from __future__ import annotations
 import pytest
 
 from qa_agents.mcp_catalog import (
+    CAPABILITY_ENV,
     CATALOG,
     MCPServer,
     get_server,
     list_servers,
     server_ids,
+    server_ids_for_capabilities,
+    servers_unlocked_by,
 )
 
 
@@ -96,3 +99,50 @@ def test_persona_compat_empty_means_all_personas():
         # Baseline entries are universal; future per-persona MCPs
         # (e.g. Sentry) may carry explicit lists.
         # No assertion on emptiness here — just the type contract.
+
+
+# ── Capability → MCP wiring (P4) ──────────────────────────────────────────
+def test_email_and_openapi_are_unlocked_by_capabilities():
+    """The capability bridge: granting the sandbox-inbox / openapi-spec
+    capabilities lights up the email / openapi servers."""
+    assert "sandbox-inbox" in get_server("email").unlocked_by
+    assert "openapi-spec" in get_server("openapi").unlocked_by
+    # Servers with no capability gate carry an empty tuple (the default).
+    assert get_server("playwright").unlocked_by == ()
+
+
+def test_server_ids_for_capabilities_maps_grants_to_servers():
+    assert server_ids_for_capabilities(["sandbox-inbox"]) == ("email",)
+    assert server_ids_for_capabilities(["openapi-spec"]) == ("openapi",)
+    # Multiple grants → both servers, catalog order, de-duplicated.
+    assert server_ids_for_capabilities(
+        ["openapi-spec", "sandbox-inbox", "sandbox-sending"],
+    ) == ("email", "openapi")
+    # Unknown / unmapped capability ids contribute nothing.
+    assert server_ids_for_capabilities(["test-account", "kube-exec"]) == ()
+    assert server_ids_for_capabilities([]) == ()
+    assert server_ids_for_capabilities(None) == ()
+
+
+def test_capability_env_targets_existing_servers_and_env_vars():
+    # Every CAPABILITY_ENV key unlocks a real catalog server…
+    for cid, env_var in CAPABILITY_ENV.items():
+        assert servers_unlocked_by(cid), f"{cid} unlocks no server"
+        assert env_var.startswith("QA_")
+    # …and the two wired today are present.
+    assert CAPABILITY_ENV["openapi-spec"] == "QA_OPENAPI_URL"
+    assert CAPABILITY_ENV["sandbox-inbox"] == "QA_MAILPIT_URL"
+
+
+def test_servers_unlocked_by_single_capability():
+    powered = servers_unlocked_by("sandbox-inbox")
+    assert [s.id for s in powered] == ["email"]
+    assert servers_unlocked_by("test-account") == ()
+
+
+def test_friendly_name_is_plain_and_falls_back_to_display_name():
+    # Capability-mapped servers carry a non-technical name for operators…
+    assert get_server("email").friendly == "email inbox tool"
+    assert get_server("openapi").friendly == "API probing tool"
+    # …unmapped ones fall back to the developer display_name.
+    assert get_server("playwright").friendly == get_server("playwright").display_name
