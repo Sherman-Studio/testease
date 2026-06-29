@@ -25,6 +25,15 @@
           </p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
+          <button
+            v-if="capView.depth"
+            class="pill text-[10px] uppercase tracking-wide text-brand-700"
+            data-testid="depth-pill"
+            title="Testing depth — grant more access to test deeper"
+            @click="tab = 'capabilities'"
+          >
+            depth: {{ capView.depth.depth_label }} →
+          </button>
           <span
             v-if="lifecycle"
             class="pill text-[10px] uppercase tracking-wide text-brand-700"
@@ -421,6 +430,178 @@
           No questions yet. The explorer generates these when it probes the site.
         </p>
       </section>
+
+      <!-- Capabilities — grant deeper access ("level up your testing") -->
+      <section v-else-if="tab === 'capabilities'" data-testid="capabilities-tab">
+        <!-- framing first: what this is + that you stay in control -->
+        <p class="mb-4 text-sm text-ink-600">
+          Test Ease tests with whatever access you give it — the more you grant,
+          the deeper it can test (a vague "the page errored" becomes a real stack
+          trace + request id).
+          <strong class="text-ink-800">Everything here is optional and you stay
+          in control:</strong> Test Ease only ever <em>uses what you grant</em>,
+          and never connects to anything on its own. Credentials go to the
+          encrypted vault — only a pointer is kept.
+        </p>
+
+        <!-- depth hero -->
+        <div v-if="capView.depth" class="panel panel-pad mb-5">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="flex items-center gap-1 text-[10px] uppercase tracking-wide text-ink-500">
+                Testing depth
+                <HelpTip label="Testing depth">
+                  How deep Test Ease can test this site, based on what you've
+                  granted — from <strong>Black-box</strong> (just a public URL,
+                  anonymous clicking) up to <strong>Environment control</strong>
+                  (logs, DB, infra). Each rung you grant turns guesses into
+                  verified facts.
+                </HelpTip>
+              </p>
+              <p class="text-lg font-semibold text-ink-900">
+                {{ capView.depth.depth_label }}
+                <span class="text-sm font-normal text-ink-500">
+                  (level {{ capView.depth.depth_level }} of 5)
+                </span>
+              </p>
+            </div>
+            <p v-if="capView.depth.next_unlock" class="max-w-md text-xs text-ink-500">
+              <span class="font-medium text-brand-700">Next unlock:</span>
+              {{ capView.depth.next_unlock.title }} — {{ capView.depth.next_unlock.unlocks }}
+            </p>
+          </div>
+          <div class="mt-3 flex gap-1" data-testid="depth-ladder">
+            <div
+              v-for="(lvl, i) in capView.depth.levels"
+              :key="lvl"
+              class="flex-1 rounded-full px-2 py-1 text-center text-[10px] font-medium"
+              :class="i <= capView.depth.depth_level ? 'bg-brand-50 text-brand-800' : 'bg-ink-100 text-ink-400'"
+            >
+              {{ lvl }}
+            </div>
+          </div>
+        </div>
+
+        <div v-if="capError" class="mb-3 text-sm text-red-400">{{ capError }}</div>
+
+        <!-- capabilities, grouped by ladder rung (lighter rungs first;
+             sensitive infra rungs are collapsed behind "Advanced access") -->
+        <div v-for="lvl in capLevels" :key="lvl" class="mb-5">
+          <!-- the gate to the high-trust rungs, shown once -->
+          <button
+            v-if="lvl === firstAdvancedLevel"
+            class="mb-3 w-full rounded-md border border-ink-200 px-4 py-2 text-left text-sm text-ink-700 transition hover:border-amber-400/60"
+            data-testid="advanced-toggle"
+            @click="advancedOpen = !advancedOpen"
+          >
+            {{ advancedOpen ? '▾' : '▸' }}
+            <span class="font-medium">Advanced access</span>
+            <span class="text-ink-500">
+              — sensitive infrastructure (read-only DB, admin API, Kubernetes…).
+              Higher trust; grant only what you're comfortable with.
+            </span>
+          </button>
+          <template v-if="lvl <= MAX_VISIBLE_LEVEL || advancedOpen">
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+            L{{ lvl }} · {{ capView.depth ? capView.depth.levels[lvl] : '' }}
+          </h3>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <div
+              v-for="cap in capsByLevel(lvl)"
+              :key="cap.capability_id"
+              class="panel panel-pad"
+              :data-testid="`cap-${cap.capability_id}`"
+              :class="{ 'opacity-60': capView.depth && lvl > capView.depth.depth_level + 1 && cap.status === 'available' }"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-ink-900">{{ cap.title }}</p>
+                  <p class="mt-0.5 text-xs text-ink-500">{{ cap.unlocks }}</p>
+                </div>
+                <span class="pill shrink-0 text-[10px]" :class="riskClass(cap.risk_class)">
+                  {{ cap.risk_class }}
+                </span>
+              </div>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <template v-if="cap.status === 'granted'">
+                  <span class="pill text-[10px] text-emerald-400">granted ✓</span>
+                  <button class="btn-ghost btn" :disabled="busyCapId === cap.capability_id" @click="revokeCap(cap)">
+                    Revoke
+                  </button>
+                </template>
+                <template v-else-if="connecting[cap.capability_id] !== undefined">
+                  <input
+                    v-if="cap.grant_kind !== 'none'"
+                    v-model="connecting[cap.capability_id]"
+                    :type="cap.grant_kind === 'secret' ? 'password' : 'text'"
+                    class="input flex-1"
+                    :placeholder="connectPlaceholder(cap)"
+                    :data-testid="`cap-${cap.capability_id}-input`"
+                  />
+                  <button
+                    class="btn-primary btn"
+                    :disabled="busyCapId === cap.capability_id"
+                    :data-testid="`cap-${cap.capability_id}-save`"
+                    @click="saveConnect(cap)"
+                  >
+                    Grant
+                  </button>
+                  <button class="btn-ghost btn" @click="cancelConnect(cap)">Cancel</button>
+                </template>
+                <template v-else>
+                  <button
+                    class="btn-primary btn"
+                    :data-testid="`cap-${cap.capability_id}-connect`"
+                    @click="startConnect(cap)"
+                  >
+                    Connect
+                  </button>
+                  <button
+                    v-if="cap.status === 'available' || cap.status === 'proposed'"
+                    class="btn-ghost btn"
+                    @click="setStatus(cap, 'not_applicable')"
+                  >
+                    Not applicable
+                  </button>
+                  <span v-if="cap.status === 'proposed'" class="pill text-[10px] text-amber-400">proposed</span>
+                  <span
+                    v-else-if="cap.status === 'declined' || cap.status === 'not_applicable'"
+                    class="text-xs text-ink-400"
+                  >{{ cap.status.replace('_', ' ') }}</span>
+                </template>
+              </div>
+            </div>
+          </div>
+          </template>
+        </div>
+
+        <!-- custom escape hatch -->
+        <div class="panel panel-pad">
+          <button
+            v-if="!customOpen"
+            class="text-sm text-brand-700 underline"
+            data-testid="cap-custom-open"
+            @click="customOpen = true"
+          >
+            + Connect a custom capability
+          </button>
+          <div v-else class="space-y-2">
+            <p class="text-xs text-ink-500">
+              Anything bespoke — a god-mode console, an internal GraphQL, an MCP
+              server the site exposes.
+            </p>
+            <input v-model="customForm.title" class="input" placeholder="Name (e.g. Admin GraphQL)" data-testid="cap-custom-title" />
+            <input v-model="customForm.unlocks" class="input" placeholder="What it unlocks for testing" />
+            <input v-model="customForm.token" type="password" class="input" placeholder="Credential / URL (optional)" />
+            <div class="flex gap-2">
+              <button class="btn-primary btn" :disabled="!customForm.title.trim() || busyCapId === 'custom'" data-testid="cap-custom-add" @click="addCustom">
+                Add capability
+              </button>
+              <button class="btn-ghost btn" @click="customOpen = false">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -430,13 +611,17 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import {
   answerSiteQuestion,
   createSiteKnowledge,
+  addCustomCapability,
   deleteSiteKnowledge,
   exploreSiteTarget,
+  getSiteCapabilities,
   getSiteTarget,
   listSiteFlows,
   listSiteKnowledge,
   listSiteQuestions,
   listSiteSurfaces,
+  revokeCapability,
+  setCapability,
   setTargetLifecycle,
   skipSiteQuestion,
   updateSiteKnowledge,
@@ -482,6 +667,7 @@ const TABS = computed(() => [
   { id: 'flows', label: 'Flows', count: flows.value.length },
   { id: 'knowledge', label: 'Knowledge', count: knowledge.value.length },
   { id: 'questions', label: 'Questions', count: questions.value.length },
+  { id: 'capabilities', label: 'Capabilities', count: capView.value.depth ? capView.value.depth.granted_count : 0 },
 ])
 
 function byKind(kind) {
@@ -520,6 +706,7 @@ async function reloadModel() {
     listSiteFlows(props.targetId),
     listSiteKnowledge(props.targetId),
     refreshQuestions(),
+    refreshCapabilities(),
   ])
   target.value = t
   surfaces.value = s
@@ -547,6 +734,101 @@ async function explore() {
   }
 }
 
+// ── capabilities ──
+const capView = ref({ depth: null, capabilities: [] })
+const capError = ref('')
+const busyCapId = ref(null)
+const connecting = reactive({})
+const customOpen = ref(false)
+const customForm = reactive({ title: '', unlocks: '', token: '' })
+
+async function refreshCapabilities() {
+  capView.value = await getSiteCapabilities(props.targetId)
+}
+const capLevels = computed(() => {
+  const seen = [...new Set(capView.value.capabilities.map((c) => c.level))]
+  return seen.sort((a, b) => a - b)
+})
+// Rungs above this are sensitive infra — collapsed behind "Advanced access".
+const MAX_VISIBLE_LEVEL = 3
+const advancedOpen = ref(false)
+const firstAdvancedLevel = computed(
+  () => capLevels.value.find((l) => l > MAX_VISIBLE_LEVEL) ?? null,
+)
+function capsByLevel(lvl) {
+  return capView.value.capabilities.filter((c) => c.level === lvl)
+}
+function riskClass(risk) {
+  return {
+    'write-control': 'text-rose-400',
+    'prod-read': 'text-amber-400',
+    'read-only': 'text-ink-400',
+    'sandbox-only': 'text-emerald-400',
+  }[risk] || 'text-ink-400'
+}
+function connectPlaceholder(cap) {
+  if (cap.grant_kind === 'secret') return 'Paste the credential (vaulted)'
+  if (cap.grant_kind === 'url') return 'https://…'
+  return 'Connection detail / URL'
+}
+function startConnect(cap) {
+  capError.value = ''
+  if (cap.grant_kind === 'none') return setStatus(cap, 'granted')
+  connecting[cap.capability_id] = ''
+}
+function cancelConnect(cap) {
+  delete connecting[cap.capability_id]
+}
+async function _apply(capabilityId, payload, busy) {
+  busyCapId.value = busy
+  capError.value = ''
+  try {
+    capView.value = await setCapability(props.targetId, capabilityId, payload)
+    delete connecting[capabilityId]
+  } catch (e) {
+    capError.value = e?.response?.data?.detail || e.message || 'Could not update capability'
+  } finally {
+    busyCapId.value = null
+  }
+}
+function saveConnect(cap) {
+  const token = String(connecting[cap.capability_id] || '').trim()
+  return _apply(cap.capability_id, { status: 'granted', token: token || undefined }, cap.capability_id)
+}
+function setStatus(cap, status) {
+  return _apply(cap.capability_id, { status }, cap.capability_id)
+}
+async function revokeCap(cap) {
+  busyCapId.value = cap.capability_id
+  try {
+    capView.value = await revokeCapability(props.targetId, cap.capability_id)
+  } catch (e) {
+    capError.value = e?.response?.data?.detail || e.message || 'Could not revoke'
+  } finally {
+    busyCapId.value = null
+  }
+}
+async function addCustom() {
+  if (!customForm.title.trim()) return
+  busyCapId.value = 'custom'
+  capError.value = ''
+  try {
+    capView.value = await addCustomCapability(props.targetId, {
+      title: customForm.title.trim(),
+      unlocks: customForm.unlocks.trim(),
+      token: customForm.token.trim() || undefined,
+    })
+    customForm.title = ''
+    customForm.unlocks = ''
+    customForm.token = ''
+    customOpen.value = false
+  } catch (e) {
+    capError.value = e?.response?.data?.detail || e.message || 'Could not add capability'
+  } finally {
+    busyCapId.value = null
+  }
+}
+
 onMounted(async () => {
   try {
     const [t, s, f, k] = await Promise.all([
@@ -555,6 +837,7 @@ onMounted(async () => {
       listSiteFlows(props.targetId),
       listSiteKnowledge(props.targetId),
       refreshQuestions(),
+      refreshCapabilities(),
     ])
     target.value = t
     surfaces.value = s

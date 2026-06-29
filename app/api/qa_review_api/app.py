@@ -78,6 +78,17 @@ from qa_store.app_config import (
     get_llm_token,
     set_llm_config,
 )
+from qa_store.capabilities import (
+    CAPABILITY_STATUSES,
+    capability_depth,
+    delete_site_capability,
+    get_capability,
+    list_capabilities,
+    list_site_capabilities,
+    seed_capability_catalog,
+    set_capability_status,
+    upsert_capability,
+)
 from qa_store.embeddings import embedding_dim_for
 from qa_store.schema import DEFAULT_TENANT, SITE_QUESTION_KINDS
 from qa_store.site_model import (
@@ -423,6 +434,23 @@ class LLMConfigSet(BaseModel):
     token: str | None = Field(default=None, max_length=4_000)
 
 
+class CapabilityGrant(BaseModel):
+    # status: granted / declined / not_applicable / proposed. A `token` (secret
+    # credential) is vaulted server-side and never echoed; `config` is non-secret.
+    status: str = Field(min_length=1, max_length=30)
+    token: str | None = Field(default=None, max_length=8_000)
+    config: dict | None = None
+
+
+class CustomCapability(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    unlocks: str = Field(default="", max_length=2_000)
+    level: int = Field(default=1, ge=0, le=5)
+    grant_kind: str = "connection"
+    token: str | None = Field(default=None, max_length=8_000)
+    config: dict | None = None
+
+
 _LLM_BACKEND_META = {
     "claude-code": {
         "label": "Claude Code subscription (flat price)",
@@ -576,6 +604,13 @@ def create_app(
             _seed_log.getLogger(__name__).info(
                 "qa_personas seed skipped: harness package not on path",
             )
+
+    # Seed the capability catalog (idempotent, insert-only — operator edits +
+    # custom entries survive). The menu of grantable capabilities.
+    try:
+        seed_capability_catalog(store)
+    except Exception:  # noqa: BLE001 — never block boot on the seed
+        _seed_log.getLogger(__name__).warning("capability catalog seed failed", exc_info=True)
 
     # Ensure the Site Model $vectorSearch indexes once at startup (idempotent,
     # best-effort), sized to the selected embedding provider
@@ -2057,6 +2092,82 @@ def create_app(
         if summary is None:
             raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
         return summary
+
+    # -- Capabilities (grant deeper access) --------------------------------
+    def _capabilities_view(target_id: str) -> dict:
+        """Catalog merged with this target's grant status + the depth roll-up.
+        Secrets are pointers only — values are never returned."""
+        grants = {
+            g["capability_id"]: g
+            for g in list_site_capabilities(store, DEFAULT_TENANT, target_id)
+        }
+        merged = []
+        for cap in list_capabilities(store):
+            g = grants.get(cap["capability_id"])
+            merged.append({
+                **cap,
+                "status": g["status"] if g else "available",
+                "credential_ref": (g or {}).get("credential_ref"),
+                "config": (g or {}).get("config", {}),
+                "proposed_by": (g or {}).get("proposed_by"),
+            })
+        return {
+            "depth": capability_depth(store, DEFAULT_TENANT, target_id),
+            "capabilities": merged,
+        }
+
+    @app.get("/api/capabilities", tags=["Capabilities"])
+    def api_capability_catalog() -> dict:
+        return {"capabilities": list_capabilities(store)}
+
+    @app.get("/api/site/targets/{target_id}/capabilities", tags=["Capabilities"])
+    def api_site_capabilities(target_id: str) -> dict:
+        if get_site_target(store, DEFAULT_TENANT, target_id) is None:
+            raise HTTPException(status_code=404, detail=f"unknown target {target_id!r}")
+        return _capabilities_view(target_id)
+
+    @app.put(
+        "/api/site/targets/{target_id}/capabilities/{capability_id}",
+        tags=["Capabilities"],
+    )
+    def api_set_capability(target_id: str, capability_id: str, body: CapabilityGrant) -> dict:
+        if body.status not in CAPABILITY_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"status must be one of {list(CAPABILITY_STATUSES)}",
+            )
+        if get_capability(store, capability_id) is None:
+            raise HTTPException(status_code=404, detail=f"unknown capability {capability_id!r}")
+        token = (body.token or "").strip() or None
+        set_capability_status(
+            store, target_id=target_id, capability_id=capability_id,
+            status=body.status, token=token, config=body.config,
+        )
+        return _capabilities_view(target_id)
+
+    @app.post("/api/site/targets/{target_id}/capabilities", tags=["Capabilities"])
+    def api_custom_capability(target_id: str, body: CustomCapability) -> dict:
+        """Connect a bespoke capability (the open-tail escape hatch): add a
+        custom catalog entry and grant it for this target."""
+        cap_id = f"custom-{uuid.uuid4().hex[:10]}"
+        upsert_capability(
+            store, capability_id=cap_id, title=body.title, unlocks=body.unlocks,
+            category="custom", level=body.level, grant_kind=body.grant_kind,
+        )
+        token = (body.token or "").strip() or None
+        set_capability_status(
+            store, target_id=target_id, capability_id=cap_id, status="granted",
+            token=token, config=body.config,
+        )
+        return _capabilities_view(target_id)
+
+    @app.delete(
+        "/api/site/targets/{target_id}/capabilities/{capability_id}",
+        tags=["Capabilities"],
+    )
+    def api_revoke_capability(target_id: str, capability_id: str) -> dict:
+        delete_site_capability(store, DEFAULT_TENANT, target_id, capability_id)
+        return _capabilities_view(target_id)
 
     # -- BYOK: LLM backend config ------------------------------------------
     def _llm_status() -> dict:
