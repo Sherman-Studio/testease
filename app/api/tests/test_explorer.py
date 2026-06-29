@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import mongomock
 import pytest
+from qa_store.capabilities import list_site_capabilities, set_capability_status
 from qa_store.schema import Store
 from qa_store.site_model import (
     get_site_target,
@@ -81,8 +82,67 @@ def test_fetch_failure_still_advances(store, monkeypatch):
     assert list_questions_by_target(store, "default", "acme")
 
 
+def test_title_ignores_svg_icon_titles(store, monkeypatch):
+    # Real pages embed <title> inside inline SVG icons; only the document
+    # <title> should be captured (not "Real titlemodule-four").
+    html = (
+        "<html><head><title>Real title</title></head><body>"
+        '<svg><title>module-four</title></svg>'
+        '<svg><title>Triangle</title></svg>'
+        "</body></html>"
+    )
+    monkeypatch.setattr(explorer, "_fetch", lambda url: html)
+    _target(store)
+    explorer.explore_target(store, "acme")
+    home = next(
+        s for s in list_surfaces_by_target(store, "default", "acme")
+        if s["surface_id"] == "home"
+    )
+    assert "module-four" not in home["description"]
+    assert "Real title" in home["description"]
+
+
 def test_unknown_target_returns_none(store):
     assert explorer.explore_target(store, "ghost") is None
+
+
+def _proposed(store, tid="acme"):
+    return {
+        c["capability_id"]
+        for c in list_site_capabilities(store, "default", tid)
+        if c["status"] == "proposed"
+    }
+
+
+def test_explore_proposes_tailored_capabilities(store, monkeypatch):
+    monkeypatch.setattr(explorer, "_fetch", lambda url: _RICH_HTML)
+    _target(store)
+    out = explorer.explore_target(store, "acme")
+    proposed = _proposed(store)
+    # Detected login/signup/checkout/api → the matching capabilities are proposed.
+    assert {"test-account", "sandbox-inbox", "payments-sandbox", "api-token"} <= proposed
+    assert out["counts"]["capabilities_proposed"] == len(proposed)
+    # Earn-trust: never auto-propose the sensitive L4/L5 infra rungs.
+    assert "readonly-db" not in proposed and "kube-exec" not in proposed
+
+
+def test_minimal_page_proposes_nothing(store, monkeypatch):
+    monkeypatch.setattr(explorer, "_fetch", lambda url: "<html><title>Hi</title><body>x</body></html>")
+    _target(store)
+    out = explorer.explore_target(store, "acme")
+    assert out["counts"]["capabilities_proposed"] == 0
+    assert _proposed(store) == set()
+
+
+def test_explore_does_not_clobber_an_operator_decision(store, monkeypatch):
+    monkeypatch.setattr(explorer, "_fetch", lambda url: _RICH_HTML)
+    _target(store)
+    # The operator already declined something the explorer would propose.
+    set_capability_status(store, target_id="acme", capability_id="test-account", status="declined")
+    explorer.explore_target(store, "acme")
+    rows = {c["capability_id"]: c for c in list_site_capabilities(store, "default", "acme")}
+    assert rows["test-account"]["status"] == "declined"  # left untouched
+    assert "test-account" not in _proposed(store)
 
 
 def test_re_explore_is_idempotent(store, monkeypatch):
@@ -98,6 +158,7 @@ def test_re_explore_is_idempotent(store, monkeypatch):
 # ── API endpoint ──────────────────────────────────────────────────────────
 def _client(store):
     from fastapi.testclient import TestClient
+
     from qa_review_api.app import create_app
     from qa_review_api.settings import Settings
 

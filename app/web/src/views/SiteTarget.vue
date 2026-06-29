@@ -443,6 +443,11 @@
           and never connects to anything on its own. Credentials go to the
           encrypted vault — only a pointer is kept.
         </p>
+        <p class="mb-4 text-sm text-ink-500">
+          New here? You can <strong>skip this tab entirely</strong> — the personas
+          still test your public site (signup, checkout, clicking around) as
+          anonymous visitors. Grant access later when you want deeper testing.
+        </p>
 
         <!-- depth hero -->
         <div v-if="capView.depth" class="panel panel-pad mb-5">
@@ -483,6 +488,75 @@
         </div>
 
         <div v-if="capError" class="mb-3 text-sm text-red-400">{{ capError }}</div>
+
+        <!-- Suggested for this site — the explorer's short, tailored shortlist
+             (proposed from what it detected) so a newcomer isn't staring at the
+             whole catalog wondering where to start. -->
+        <div
+          v-if="proposedCaps.length"
+          class="mb-6 rounded-lg border border-brand-600/40 bg-brand-50/40 p-4"
+          data-testid="suggested-caps"
+        >
+          <h3 class="mb-1 flex items-center gap-1 text-sm font-semibold text-brand-800">
+            ✨ Suggested for this site
+          </h3>
+          <p class="mb-3 text-xs text-ink-600">
+            Based on what exploration found, these are the few worth granting
+            first — each unlocks deeper testing of a flow we detected. The full
+            catalog is below.
+          </p>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <div
+              v-for="cap in proposedCaps"
+              :key="cap.capability_id"
+              class="panel panel-pad"
+              :data-testid="`sugg-cap-${cap.capability_id}`"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-ink-900">{{ cap.title }}</p>
+                  <p class="mt-0.5 text-xs text-ink-500">{{ cap.unlocks }}</p>
+                </div>
+                <span class="pill shrink-0 text-[10px]" :class="riskClass(cap.risk_class)">
+                  {{ cap.risk_class }}
+                </span>
+              </div>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <template v-if="connecting[cap.capability_id] !== undefined">
+                  <input
+                    v-if="cap.grant_kind !== 'none'"
+                    v-model="connecting[cap.capability_id]"
+                    :type="cap.grant_kind === 'secret' ? 'password' : 'text'"
+                    class="input flex-1"
+                    :placeholder="connectPlaceholder(cap)"
+                    :data-testid="`sugg-cap-${cap.capability_id}-input`"
+                  />
+                  <button
+                    class="btn-primary btn"
+                    :disabled="busyCapId === cap.capability_id"
+                    :data-testid="`sugg-cap-${cap.capability_id}-save`"
+                    @click="saveConnect(cap)"
+                  >
+                    Grant
+                  </button>
+                  <button class="btn-ghost btn" @click="cancelConnect(cap)">Cancel</button>
+                </template>
+                <template v-else>
+                  <button
+                    class="btn-primary btn"
+                    :data-testid="`sugg-cap-${cap.capability_id}-connect`"
+                    @click="startConnect(cap)"
+                  >
+                    Connect
+                  </button>
+                  <button class="btn-ghost btn" @click="setStatus(cap, 'not_applicable')">
+                    Not applicable
+                  </button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- capabilities, grouped by ladder rung (lighter rungs first;
              sensitive infra rungs are collapsed behind "Advanced access") -->
@@ -755,8 +829,15 @@ const advancedOpen = ref(false)
 const firstAdvancedLevel = computed(
   () => capLevels.value.find((l) => l > MAX_VISIBLE_LEVEL) ?? null,
 )
+// The explorer's tailored shortlist — surfaced in its own "Suggested" section,
+// so it's excluded from the full ladder below to avoid showing twice.
+const proposedCaps = computed(() =>
+  capView.value.capabilities.filter((c) => c.status === 'proposed'),
+)
 function capsByLevel(lvl) {
-  return capView.value.capabilities.filter((c) => c.level === lvl)
+  return capView.value.capabilities.filter(
+    (c) => c.level === lvl && c.status !== 'proposed',
+  )
 }
 function riskClass(risk) {
   return {

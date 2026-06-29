@@ -38,6 +38,7 @@ const mocks = {
   createScenario: vi.fn(),
   deleteScenario: vi.fn(),
   listScenarios: vi.fn(),
+  listSiteTargets: vi.fn(),
   updatePersona: vi.fn(),
 }
 
@@ -52,6 +53,7 @@ vi.mock('../api', () => ({
   createScenario: (...a) => mocks.createScenario(...a),
   deleteScenario: (...a) => mocks.deleteScenario(...a),
   listScenarios: (...a) => mocks.listScenarios(...a),
+  listSiteTargets: (...a) => mocks.listSiteTargets(...a),
   updatePersona: (...a) => mocks.updatePersona(...a),
 }))
 
@@ -102,6 +104,11 @@ function setup({ active = null, dbPersonas = DB_PERSONAS_ALL_ACTIVE } = {}) {
   mocks.createScenario.mockResolvedValue({})
   mocks.deleteScenario.mockResolvedValue(true)
   mocks.listScenarios.mockResolvedValue([])
+  // A registered site so the Target field defaults to a real URL (and Launch,
+  // which now requires a target, enables) — mirrors the real onMounted load.
+  mocks.listSiteTargets.mockResolvedValue([
+    { target_id: 'acme', base_url: 'https://acme.test' },
+  ])
   mocks.updatePersona.mockResolvedValue({})
 }
 
@@ -191,6 +198,27 @@ describe('<NewRun> in-flight isolation (#1821)', () => {
     const wrapper = await mountReady({ active: null })
     const start = wrapper.find('[data-testid="cta-start"]')
     expect(start.attributes('disabled')).toBeUndefined()
+  })
+
+  it('defaults the target to a registered site (not a hardcoded URL)', async () => {
+    const wrapper = await mountReady({ active: null })
+    const field = wrapper.find('input[aria-label="Target URL"]')
+    expect(field.element.value).toBe('https://acme.test')
+    // The retired slyreply sandbox default must be gone everywhere.
+    expect(wrapper.html()).not.toContain('slyreply')
+  })
+
+  it('disables Launch when there is no target and blocks the run', async () => {
+    setup({ active: null })
+    mocks.listSiteTargets.mockResolvedValue([]) // no sites added yet (override default)
+    const wrapper = mountNewRun()
+    await flushPromises()
+    expect(wrapper.find('input[aria-label="Target URL"]').element.value).toBe('')
+    const start = wrapper.find('[data-testid="cta-start"]')
+    expect(start.attributes('disabled')).toBeDefined()
+    await start.trigger('click')
+    await flushPromises()
+    expect(mocks.triggerRun).not.toHaveBeenCalled()
   })
 })
 
