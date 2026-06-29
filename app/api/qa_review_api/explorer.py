@@ -20,6 +20,11 @@ from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 import httpx
+from qa_store.capabilities import (
+    list_capabilities,
+    list_site_capabilities,
+    set_capability_status,
+)
 from qa_store.schema import DEFAULT_TENANT, Store
 from qa_store.site_model import (
     get_site_target,
@@ -29,6 +34,10 @@ from qa_store.site_model import (
     upsert_test_flow,
 )
 from qa_store.site_questions import upsert_site_question
+
+# Only auto-propose lighter rungs — earn-trust: never *ask* for sensitive infra
+# (read-only DB, kube/exec) up front; the operator climbs to those themselves.
+_MAX_AUTO_PROPOSE_LEVEL = 3
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +122,38 @@ def _detect(scan: _Scan) -> set[str]:
             if any(k in hay for k in kws):
                 detected.add(flow)
     return detected
+
+
+def _propose_capabilities(
+    store: Store, tenant_id: str, target_id: str, detected: set[str],
+) -> int:
+    """Propose the capabilities relevant to what was detected (earn-trust:
+    lighter rungs only). Skips any the operator has already acted on, so a
+    re-explore never clobbers a grant/decline. Returns how many it proposed."""
+    # detected flow → capability `proposed_when` signals.
+    signals: set[str] = set()
+    if detected & {"login", "signup"}:
+        signals |= {"login_form", "email"}  # auth + verification/reset email
+    if "checkout" in detected:
+        signals.add("payments")
+    if "api" in detected:
+        signals.add("api")
+
+    acted = {g["capability_id"] for g in list_site_capabilities(store, tenant_id, target_id)}
+    n = 0
+    for cap in list_capabilities(store):
+        if (
+            cap.get("proposed_when") in signals
+            and cap["level"] <= _MAX_AUTO_PROPOSE_LEVEL
+            and cap["capability_id"] not in acted
+        ):
+            set_capability_status(
+                store, tenant_id=tenant_id, target_id=target_id,
+                capability_id=cap["capability_id"], status="proposed",
+                proposed_by="explorer",
+            )
+            n += 1
+    return n
 
 
 def explore_target(
@@ -238,6 +279,9 @@ def explore_target(
             options=options, required=required, order=order, generated_by="explorer",
         )
 
+    # Propose the relevant capabilities (the tailored, earn-trust shortlist).
+    n_proposed = _propose_capabilities(store, tenant_id, target_id, detected)
+
     set_target_lifecycle(store, tenant_id, target_id, "awaiting-answers")
     return {
         "lifecycle": "awaiting-answers",
@@ -249,5 +293,6 @@ def explore_target(
             "flows": len(flows),
             "knowledge": 1,
             "questions": len(questions),
+            "capabilities_proposed": n_proposed,
         },
     }

@@ -256,4 +256,15 @@ describe('<SiteTarget> capabilities', () => {
     await w.find('[data-testid="advanced-toggle"]').trigger('click')
     expect(w.find('[data-testid="cap-kube-exec"]').exists()).toBe(true)
   })
+
+  it('surfaces the explorer-proposed shortlist in a "Suggested" section', async () => {
+    const caps = CAPS()
+    caps.capabilities[0].status = 'proposed' // test-account proposed by the explorer
+    mocks.getSiteCapabilities.mockResolvedValue(caps)
+    const w = mountTarget()
+    await flushPromises()
+    await openCapsTab(w)
+    expect(w.find('[data-testid="suggested-caps"]').exists()).toBe(true)
+    expect(w.find('[data-testid="suggested-caps"]').text()).toContain('Test account')
+  })
 })

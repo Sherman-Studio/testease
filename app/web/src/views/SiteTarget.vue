@@ -444,6 +444,29 @@
           encrypted vault — only a pointer is kept.
         </p>
 
+        <!-- Suggested for this site — the explorer's tailored shortlist -->
+        <div v-if="proposedCaps.length" class="mb-5" data-testid="suggested-caps">
+          <h3 class="mb-2 flex items-center gap-2 text-sm font-semibold text-ink-900">
+            Suggested for this site
+            <span class="pill text-[10px] text-brand-700">{{ proposedCaps.length }}</span>
+          </h3>
+          <p class="mb-2 text-xs text-ink-500">
+            Based on what the explorer found, these are the highest-value access
+            grants to start with. Connect what applies; dismiss what doesn't.
+          </p>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <CapabilityCard
+              v-for="cap in proposedCaps"
+              :key="cap.capability_id"
+              :cap="cap"
+              :busy="busyCapId === cap.capability_id"
+              @grant="(token) => grantCap(cap, token)"
+              @na="setStatus(cap, 'not_applicable')"
+              @revoke="revokeCap(cap)"
+            />
+          </div>
+        </div>
+
         <!-- depth hero -->
         <div v-if="capView.depth" class="panel panel-pad mb-5">
           <div class="flex flex-wrap items-start justify-between gap-3">
@@ -506,71 +529,15 @@
             L{{ lvl }} · {{ capView.depth ? capView.depth.levels[lvl] : '' }}
           </h3>
           <div class="grid gap-2 sm:grid-cols-2">
-            <div
+            <CapabilityCard
               v-for="cap in capsByLevel(lvl)"
               :key="cap.capability_id"
-              class="panel panel-pad"
-              :data-testid="`cap-${cap.capability_id}`"
-              :class="{ 'opacity-60': capView.depth && lvl > capView.depth.depth_level + 1 && cap.status === 'available' }"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="text-sm font-medium text-ink-900">{{ cap.title }}</p>
-                  <p class="mt-0.5 text-xs text-ink-500">{{ cap.unlocks }}</p>
-                </div>
-                <span class="pill shrink-0 text-[10px]" :class="riskClass(cap.risk_class)">
-                  {{ cap.risk_class }}
-                </span>
-              </div>
-              <div class="mt-2 flex flex-wrap items-center gap-2">
-                <template v-if="cap.status === 'granted'">
-                  <span class="pill text-[10px] text-emerald-400">granted ✓</span>
-                  <button class="btn-ghost btn" :disabled="busyCapId === cap.capability_id" @click="revokeCap(cap)">
-                    Revoke
-                  </button>
-                </template>
-                <template v-else-if="connecting[cap.capability_id] !== undefined">
-                  <input
-                    v-if="cap.grant_kind !== 'none'"
-                    v-model="connecting[cap.capability_id]"
-                    :type="cap.grant_kind === 'secret' ? 'password' : 'text'"
-                    class="input flex-1"
-                    :placeholder="connectPlaceholder(cap)"
-                    :data-testid="`cap-${cap.capability_id}-input`"
-                  />
-                  <button
-                    class="btn-primary btn"
-                    :disabled="busyCapId === cap.capability_id"
-                    :data-testid="`cap-${cap.capability_id}-save`"
-                    @click="saveConnect(cap)"
-                  >
-                    Grant
-                  </button>
-                  <button class="btn-ghost btn" @click="cancelConnect(cap)">Cancel</button>
-                </template>
-                <template v-else>
-                  <button
-                    class="btn-primary btn"
-                    :data-testid="`cap-${cap.capability_id}-connect`"
-                    @click="startConnect(cap)"
-                  >
-                    Connect
-                  </button>
-                  <button
-                    v-if="cap.status === 'available' || cap.status === 'proposed'"
-                    class="btn-ghost btn"
-                    @click="setStatus(cap, 'not_applicable')"
-                  >
-                    Not applicable
-                  </button>
-                  <span v-if="cap.status === 'proposed'" class="pill text-[10px] text-amber-400">proposed</span>
-                  <span
-                    v-else-if="cap.status === 'declined' || cap.status === 'not_applicable'"
-                    class="text-xs text-ink-400"
-                  >{{ cap.status.replace('_', ' ') }}</span>
-                </template>
-              </div>
-            </div>
+              :cap="cap"
+              :busy="busyCapId === cap.capability_id"
+              @grant="(token) => grantCap(cap, token)"
+              @na="setStatus(cap, 'not_applicable')"
+              @revoke="revokeCap(cap)"
+            />
           </div>
           </template>
         </div>
@@ -626,6 +593,7 @@ import {
   skipSiteQuestion,
   updateSiteKnowledge,
 } from '../api.js'
+import CapabilityCard from '../components/CapabilityCard.vue'
 import HelpTip from '../components/HelpTip.vue'
 
 const props = defineProps({
@@ -738,15 +706,20 @@ async function explore() {
 const capView = ref({ depth: null, capabilities: [] })
 const capError = ref('')
 const busyCapId = ref(null)
-const connecting = reactive({})
 const customOpen = ref(false)
 const customForm = reactive({ title: '', unlocks: '', token: '' })
 
 async function refreshCapabilities() {
   capView.value = await getSiteCapabilities(props.targetId)
 }
+// The explorer's tailored shortlist; shown up top, so it's not also in the ladder.
+const proposedCaps = computed(
+  () => capView.value.capabilities.filter((c) => c.status === 'proposed'),
+)
 const capLevels = computed(() => {
-  const seen = [...new Set(capView.value.capabilities.map((c) => c.level))]
+  const seen = [...new Set(capView.value.capabilities
+    .filter((c) => c.status !== 'proposed')
+    .map((c) => c.level))]
   return seen.sort((a, b) => a - b)
 })
 // Rungs above this are sensitive infra — collapsed behind "Advanced access".
@@ -756,47 +729,24 @@ const firstAdvancedLevel = computed(
   () => capLevels.value.find((l) => l > MAX_VISIBLE_LEVEL) ?? null,
 )
 function capsByLevel(lvl) {
-  return capView.value.capabilities.filter((c) => c.level === lvl)
+  return capView.value.capabilities.filter((c) => c.level === lvl && c.status !== 'proposed')
 }
-function riskClass(risk) {
-  return {
-    'write-control': 'text-rose-400',
-    'prod-read': 'text-amber-400',
-    'read-only': 'text-ink-400',
-    'sandbox-only': 'text-emerald-400',
-  }[risk] || 'text-ink-400'
-}
-function connectPlaceholder(cap) {
-  if (cap.grant_kind === 'secret') return 'Paste the credential (vaulted)'
-  if (cap.grant_kind === 'url') return 'https://…'
-  return 'Connection detail / URL'
-}
-function startConnect(cap) {
-  capError.value = ''
-  if (cap.grant_kind === 'none') return setStatus(cap, 'granted')
-  connecting[cap.capability_id] = ''
-}
-function cancelConnect(cap) {
-  delete connecting[cap.capability_id]
-}
-async function _apply(capabilityId, payload, busy) {
-  busyCapId.value = busy
+async function _apply(capabilityId, payload) {
+  busyCapId.value = capabilityId
   capError.value = ''
   try {
     capView.value = await setCapability(props.targetId, capabilityId, payload)
-    delete connecting[capabilityId]
   } catch (e) {
     capError.value = e?.response?.data?.detail || e.message || 'Could not update capability'
   } finally {
     busyCapId.value = null
   }
 }
-function saveConnect(cap) {
-  const token = String(connecting[cap.capability_id] || '').trim()
-  return _apply(cap.capability_id, { status: 'granted', token: token || undefined }, cap.capability_id)
+function grantCap(cap, token) {
+  return _apply(cap.capability_id, { status: 'granted', token: token || undefined })
 }
 function setStatus(cap, status) {
-  return _apply(cap.capability_id, { status }, cap.capability_id)
+  return _apply(cap.capability_id, { status })
 }
 async function revokeCap(cap) {
   busyCapId.value = cap.capability_id

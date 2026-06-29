@@ -81,6 +81,39 @@ def test_fetch_failure_still_advances(store, monkeypatch):
     assert list_questions_by_target(store, "default", "acme")
 
 
+def test_explore_proposes_relevant_capabilities(store, monkeypatch):
+    from qa_store.capabilities import list_site_capabilities, seed_capability_catalog
+    seed_capability_catalog(store)
+    monkeypatch.setattr(explorer, "_fetch", lambda url: _RICH_HTML)
+    _target(store)
+    out = explorer.explore_target(store, "acme")
+    assert out["counts"]["capabilities_proposed"] > 0
+    proposed = {
+        g["capability_id"]
+        for g in list_site_capabilities(store, "default", "acme")
+        if g["status"] == "proposed"
+    }
+    # The lighter, relevant rungs are suggested…
+    assert {"test-account", "payments-sandbox", "api-token"} <= proposed
+    # …but sensitive infra (L4/L5) is NEVER auto-proposed (earn-trust).
+    assert "readonly-db" not in proposed and "kube-exec" not in proposed
+
+
+def test_re_explore_does_not_clobber_a_grant(store, monkeypatch):
+    from qa_store.capabilities import (
+        list_site_capabilities,
+        seed_capability_catalog,
+        set_capability_status,
+    )
+    seed_capability_catalog(store)
+    monkeypatch.setattr(explorer, "_fetch", lambda url: _RICH_HTML)
+    _target(store)
+    set_capability_status(store, target_id="acme", capability_id="test-account", status="granted")
+    explorer.explore_target(store, "acme")  # re-explore
+    rows = {g["capability_id"]: g for g in list_site_capabilities(store, "default", "acme")}
+    assert rows["test-account"]["status"] == "granted"  # preserved, not re-proposed
+
+
 def test_unknown_target_returns_none(store):
     assert explorer.explore_target(store, "ghost") is None
 
@@ -98,6 +131,7 @@ def test_re_explore_is_idempotent(store, monkeypatch):
 # ── API endpoint ──────────────────────────────────────────────────────────
 def _client(store):
     from fastapi.testclient import TestClient
+
     from qa_review_api.app import create_app
     from qa_review_api.settings import Settings
 
