@@ -11,6 +11,19 @@
     <p v-if="loadError" class="error">{{ loadError }}</p>
 
     <template v-else>
+      <!-- Honest up-front notice when this deployment can't dispatch runs (e.g.
+           the local-first docker stack with no cluster) — so the operator isn't
+           led through the whole form to a cryptic failure at Launch. -->
+      <div
+        v-if="!runsAvailable"
+        class="mb-5 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200"
+        data-testid="runs-unavailable-banner"
+      >
+        <strong>Runs can't be launched from this deployment.</strong>
+        {{ runsUnavailableReason || 'A run backend is not reachable.' }}
+        You can still build everything below and save it as a preset.
+      </div>
+
       <!-- #1821 — an in-flight run is its OWN isolated surface, never a
            lock on the form. Only the Launch button is guarded (the
            server backstops with a 409). -->
@@ -552,17 +565,19 @@
           </button>
           <button
             class="cta-start"
-            :disabled="busy || !!active || ceilingExceeded || !selected.length || !targetUrl"
+            :disabled="busy || !!active || ceilingExceeded || !selected.length || !targetUrl || !runsAvailable"
             :title="
-              active
-                ? 'A run is already in progress — wait for it to finish before starting another.'
-                : ceilingExceeded
-                  ? `pods × concurrency exceeds the ${MAX_SIMULTANEOUS_PERSONAS}-persona simultaneous ceiling — lower one to launch`
-                  : !targetUrl
-                    ? 'Enter the URL of the site to test first.'
-                    : !selected.length
-                      ? 'Pick at least one persona to launch.'
-                      : undefined
+              !runsAvailable
+                ? runsUnavailableReason
+                : active
+                  ? 'A run is already in progress — wait for it to finish before starting another.'
+                  : ceilingExceeded
+                    ? `pods × concurrency exceeds the ${MAX_SIMULTANEOUS_PERSONAS}-persona simultaneous ceiling — lower one to launch`
+                    : !targetUrl
+                      ? 'Enter the URL of the site to test first.'
+                      : !selected.length
+                        ? 'Pick at least one persona to launch.'
+                        : undefined
             "
             data-testid="cta-start"
             @click="trigger"
@@ -617,6 +632,7 @@ import {
   getPersonas,
   listMCPServers,
   listPersonas,
+  getRunAvailability,
   getTargetMcp,
   listScenarios,
   listSiteTargets,
@@ -768,6 +784,10 @@ const active = ref(null)
 const busy = ref(false)
 const error = ref('')
 const loadError = ref('')
+// Whether this deployment can dispatch runs at all (the local-first docker stack
+// has no cluster). Probed on mount so we explain it up front, not at Launch.
+const runsAvailable = ref(true)
+const runsUnavailableReason = ref('')
 const activationError = ref('')
 const logsOpen = ref(false)
 const logLines = ref([])
@@ -1220,6 +1240,15 @@ onMounted(async () => {
     if (pick?.base_url && !targetUrl.value) targetUrl.value = pick.base_url
   } catch {
     /* sites are a convenience here; the URL field still works free-form */
+  }
+  // Probe whether runs can actually dispatch here (no cluster → explain up
+  // front rather than 503-ing at Launch).
+  try {
+    const avail = await getRunAvailability()
+    runsAvailable.value = avail.available !== false
+    runsUnavailableReason.value = avail.reason || ''
+  } catch {
+    /* availability probe is best-effort; leave Launch enabled if unknown */
   }
   _loadMcpCatalogOnce()
   _loadPresets()

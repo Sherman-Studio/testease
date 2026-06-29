@@ -40,6 +40,7 @@ const mocks = {
   listScenarios: vi.fn(),
   listSiteTargets: vi.fn(),
   getTargetMcp: vi.fn(),
+  getRunAvailability: vi.fn(),
   updatePersona: vi.fn(),
 }
 
@@ -56,6 +57,7 @@ vi.mock('../api', () => ({
   listScenarios: (...a) => mocks.listScenarios(...a),
   listSiteTargets: (...a) => mocks.listSiteTargets(...a),
   getTargetMcp: (...a) => mocks.getTargetMcp(...a),
+  getRunAvailability: (...a) => mocks.getRunAvailability(...a),
   updatePersona: (...a) => mocks.updatePersona(...a),
 }))
 
@@ -112,6 +114,7 @@ function setup({ active = null, dbPersonas = DB_PERSONAS_ALL_ACTIVE } = {}) {
     { target_id: 'acme', base_url: 'https://acme.test' },
   ])
   mocks.getTargetMcp.mockResolvedValue({ server_ids: [], servers: [] })
+  mocks.getRunAvailability.mockResolvedValue({ available: true, reason: null })
   mocks.updatePersona.mockResolvedValue({})
 }
 
@@ -490,5 +493,27 @@ describe('<NewRun> — P4 capability-driven MCP auto-enable', () => {
   it('hides the note when the site has no granted access', async () => {
     const wrapper = await mountReady() // getTargetMcp default → no servers
     expect(wrapper.find('[data-testid="auto-mcp-note"]').exists()).toBe(false)
+  })
+})
+
+describe('<NewRun> — run availability (local-first has no cluster)', () => {
+  it('warns and disables Launch when runs cannot be dispatched', async () => {
+    setup({ active: null })
+    mocks.getRunAvailability.mockResolvedValue({
+      available: false, reason: 'Persona runs execute on a Kubernetes cluster…',
+    })
+    const wrapper = mountNewRun()
+    await flushPromises()
+    const banner = wrapper.find('[data-testid="runs-unavailable-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Kubernetes cluster')
+    // Launch is blocked even with a valid target + selection.
+    expect(wrapper.find('[data-testid="cta-start"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('no banner and Launch live when runs are available', async () => {
+    const wrapper = await mountReady({ active: null })
+    expect(wrapper.find('[data-testid="runs-unavailable-banner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cta-start"]').attributes('disabled')).toBeUndefined()
   })
 })

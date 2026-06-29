@@ -505,6 +505,34 @@ def test_active_run_cluster_unavailable(store):
     assert resp.status_code == 503
 
 
+def test_run_availability_true_when_cluster_reachable(store):
+    resp = _client(store, run_control=FakeRunControl(active=None)).get("/api/runs/availability")
+    assert resp.status_code == 200
+    assert resp.json() == {"available": True, "reason": None}
+
+
+def test_run_availability_false_without_cluster(store):
+    rc = FakeRunControl(active=ClusterUnavailable("no kube config"))
+    body = _client(store, run_control=rc).get("/api/runs/availability").json()
+    assert body["available"] is False
+    # A plain-language reason, not the raw kube-config error.
+    assert "Kubernetes" in body["reason"]
+    assert "kube-config" not in body["reason"]
+
+
+def test_trigger_without_cluster_leads_with_plain_guidance(store):
+    # The newcomer who completes the funnel and clicks Launch gets plain-language
+    # guidance up front; the raw cluster cause is appended for operators.
+    rc = FakeRunControl(secret_exists=ClusterUnavailable("Invalid kube-config file"))
+    resp = _client(store, run_control=rc).post(
+        "/api/runs/trigger", json={"personas": ["first-impression-critic"]},
+    )
+    assert resp.status_code == 503
+    detail = resp.json()["detail"]
+    assert detail.startswith("Persona runs execute on a Kubernetes cluster")
+    assert "Invalid kube-config file" in detail  # raw cause preserved for debugging
+
+
 def test_trigger_run_with_chosen_personas(store):
     rc = FakeRunControl()
     resp = _client(store, run_control=rc).post(
