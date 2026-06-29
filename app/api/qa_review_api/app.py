@@ -2063,6 +2063,18 @@ def create_app(
             generated_by="operator",
         )
 
+    def _advance_if_ready(target_id: str) -> None:
+        """Once no required questions remain open, move an ``awaiting-answers``
+        target to ``configured`` — the stepper progresses and the "Run the
+        personas" CTA unlocks without the operator hunting the lifecycle menu.
+        Forward-only and idempotent; a power user can still set it by hand."""
+        target = get_site_target(store, DEFAULT_TENANT, target_id)
+        if (target or {}).get("lifecycle") != "awaiting-answers":
+            return
+        st = questionnaire_status(store, DEFAULT_TENANT, target_id)
+        if st.get("total", 0) > 0 and st.get("required_open", 0) == 0:
+            set_target_lifecycle(store, DEFAULT_TENANT, target_id, "configured")
+
     @app.post(
         "/api/site/targets/{target_id}/questions/{question_id}/answer",
         tags=["Site Model"],
@@ -2076,6 +2088,7 @@ def create_app(
         )
         if updated is None:
             raise HTTPException(status_code=404, detail=f"unknown question {question_id!r}")
+        _advance_if_ready(target_id)
         return updated
 
     @app.post(
@@ -2088,6 +2101,7 @@ def create_app(
         )
         if updated is None:
             raise HTTPException(status_code=404, detail=f"unknown question {question_id!r}")
+        _advance_if_ready(target_id)
         return updated
 
     @app.delete(

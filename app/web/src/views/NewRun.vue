@@ -804,6 +804,12 @@ const dbPersonas = ref([])
 const activatedIds = computed(() =>
   dbPersonas.value.filter((p) => p.is_active && !p.hidden).map((p) => p.persona_id),
 )
+// The catalog's default-on set (`is_default`) — the sensible starting selection
+// for a fresh operator who hasn't activated anyone yet, so arriving on New Run
+// (e.g. via a site's "Run the personas →") lands ready to launch, not at zero.
+const defaultIds = computed(() =>
+  dbPersonas.value.filter((p) => p.is_default && !p.hidden).map((p) => p.persona_id),
+)
 function isActivated(id) {
   return activatedIds.value.includes(id)
 }
@@ -1195,12 +1201,13 @@ onMounted(async () => {
     .filter((id) => id && personaIds.value.includes(id))
   if (fromQuery.length) {
     selected.value = fromQuery
-  } else if (!selected.value.length && activatedIds.value.length) {
-    // Pre-seed the selection from the activated set (#1822 — selection is
-    // always explicit; activation just decides the starting point).
-    selected.value = activatedIds.value.filter((id) =>
-      personaIds.value.includes(id),
-    )
+  } else if (!selected.value.length) {
+    // Pre-seed the selection (#1822 — selection is always explicit; activation
+    // just decides the starting point). Prefer the operator's activated set;
+    // fall back to the catalog's default-on set so a newcomer who never
+    // activated anyone still arrives with a launchable selection, not zero.
+    const seed = activatedIds.value.length ? activatedIds.value : defaultIds.value
+    selected.value = seed.filter((id) => personaIds.value.includes(id))
   }
   // Default the target to a site the operator has actually added (deep-linkable
   // via /new-run?target=<id>), so Launch points at *their* site — never a

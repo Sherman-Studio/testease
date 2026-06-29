@@ -168,6 +168,28 @@ describe('<SiteTarget> Questions tab', () => {
     expect(mocks.skipSiteQuestion).toHaveBeenCalledWith('acme', 'has-api')
   })
 
+  it('gates the "Run the personas" CTA on the questionnaire being complete', async () => {
+    // Default mock: awaiting-answers with a required question still open → the
+    // CTA is present but disabled (the destination is visible, not yet usable).
+    let wrapper = mountTarget()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="run-personas-disabled"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="run-personas-btn"]').exists()).toBe(false)
+
+    // Configured (all required answered) → the CTA links to New Run, pre-targeted.
+    mocks.listSiteQuestions.mockResolvedValue({
+      ...structuredClone(QUESTIONNAIRE),
+      status: { total: 3, answered: 3, open: 0, skipped: 0, required_open: 0 },
+      lifecycle: 'configured',
+    })
+    wrapper = mountTarget()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="run-personas-disabled"]').exists()).toBe(false)
+    const link = wrapper.findComponent('[data-testid="run-personas-btn"]')
+    expect(link.exists()).toBe(true)
+    expect(String(link.props('to'))).toContain('/new-run?target=acme')
+  })
+
   it('drives the target lifecycle from the select', async () => {
     const wrapper = mountTarget()
     await flushPromises()

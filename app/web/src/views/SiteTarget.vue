@@ -86,6 +86,25 @@
           >
             {{ exploring ? 'Exploring…' : (lifecycle === 're-explore' ? 'Re-explore the site' : 'Explore the site') }}
           </button>
+          <!-- The bridge from onboarding to a run: live once the required
+               questions are answered (the API moves the target to configured). -->
+          <router-link
+            v-if="canRun"
+            :to="`/new-run?target=${targetId}`"
+            class="btn-primary btn"
+            data-testid="run-personas-btn"
+          >
+            Run the personas →
+          </router-link>
+          <button
+            v-else-if="!canExplore"
+            class="btn-primary btn cursor-not-allowed opacity-50"
+            disabled
+            title="Answer the required questions below first"
+            data-testid="run-personas-disabled"
+          >
+            Run the personas →
+          </button>
         </div>
         <p v-if="exploreError" class="mt-2 text-xs text-red-400" data-testid="explore-error">
           {{ exploreError }}
@@ -750,12 +769,21 @@ const canExplore = computed(() =>
 const _NEXT_STEP = {
   registered: 'explore the site, then answer its questionnaire in the Questions tab.',
   exploring: 'review what was discovered, then answer the questionnaire below.',
-  'awaiting-answers': 'answer the required questions in the Questions tab below.',
-  configured: "you're ready — launch a run from New Run.",
+  'awaiting-answers': 'answer the required questions in the Questions tab below, then run the personas.',
+  configured: "you're ready — run the personas against this site.",
   testing: 'personas are running — review what they find under Runs.',
   're-explore': 'run discovery again to refresh this site model.',
 }
 const nextStepHint = computed(() => _NEXT_STEP[lifecycle.value] || '')
+// The questionnaire is "ready to run" once it exists and no required question is
+// still open (the API auto-advances such a target to `configured`). We accept
+// either signal so the CTA is live even before a refresh round-trips.
+const readyToRun = computed(
+  () => qStatus.value.total > 0 && qStatus.value.required_open === 0,
+)
+const canRun = computed(
+  () => ['configured', 'testing'].includes(lifecycle.value) || readyToRun.value,
+)
 
 const tab = ref('surfaces')
 const TABS = computed(() => [
