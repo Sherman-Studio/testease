@@ -416,6 +416,7 @@ class FakeRunControl:
         run_notes=None,
         mandatory_action_ids=None,
         target_url=None,
+        target_id=None,
         enabled_mcp_servers=None,
         capability_env=None,
         pod_count=1,
@@ -518,6 +519,20 @@ def test_run_availability_false_without_cluster(store):
     # A plain-language reason, not the raw kube-config error.
     assert "Kubernetes" in body["reason"]
     assert "kube-config" not in body["reason"]
+
+
+def test_availability_uses_backend_self_report_when_present(store):
+    # The local Docker backend knows its own readiness (socket/image/token);
+    # the endpoint surfaces that instead of the k8s active-run probe.
+    class _Localish(FakeRunControl):
+        def availability(self):
+            return (False, "Set your Claude Code token in Settings first — local runs use it.")
+
+    resp = _client(store, run_control=_Localish()).get("/api/runs/availability")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is False
+    assert "Settings" in body["reason"]
 
 
 def test_trigger_without_cluster_leads_with_plain_guidance(store):

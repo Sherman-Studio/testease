@@ -41,6 +41,18 @@ class Settings:
     mailpit_admin_url: str = (
         "http://mailpit.qa-sandbox.svc.cluster.local:8025/mailpit"
     )
+    # How runs are dispatched: ``k8s`` (default — build a Job from the CronJob)
+    # or ``local`` (launch the harness as a sibling Docker container, for the
+    # local-first ``docker compose`` stack with no cluster). The compose file
+    # sets ``QA_RUN_BACKEND=local`` + mounts the Docker socket.
+    run_backend: str = "k8s"
+    # Local backend: the harness image to run and the Docker network to join so
+    # the container reaches ``atlas`` (the compose project network).
+    harness_image: str = "testease-harness"
+    run_network: str = "testease_default"
+    # Threaded to the harness container env on a local run.
+    embedding_provider: str = "local"
+    credential_key: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -58,4 +70,9 @@ class Settings:
                 "QA_MAILPIT_ADMIN_URL",
                 "http://mailpit.qa-sandbox.svc.cluster.local:8025/mailpit",
             ),
+            run_backend=os.environ.get("QA_RUN_BACKEND", "k8s"),
+            harness_image=os.environ.get("QA_HARNESS_IMAGE", "testease-harness"),
+            run_network=os.environ.get("QA_RUN_NETWORK", "testease_default"),
+            embedding_provider=os.environ.get("QA_EMBEDDING_PROVIDER", "local"),
+            credential_key=os.environ.get("QA_CREDENTIAL_KEY", ""),
         )

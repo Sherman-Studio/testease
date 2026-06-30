@@ -296,6 +296,7 @@ class K8sRunControl:
         run_notes: str | None = None,
         mandatory_action_ids: list[str] | None = None,
         target_url: str | None = None,
+        target_id: str | None = None,
         enabled_mcp_servers: list[str] | None = None,
         capability_env: dict[str, str] | None = None,
         pod_count: int = 1,
@@ -510,6 +511,16 @@ class K8sRunControl:
                         k8s.client.V1EnvVar(
                             name="QA_WEB_BASE_URL", value=target_url,
                         )
+                    ]
+                if target_id:
+                    # The registered target's id — the harness keys site
+                    # knowledge (by-design suppressions) + granted capabilities
+                    # on it. Same strip-then-append shape as the other overrides.
+                    container.env = [
+                        e for e in (container.env or [])
+                        if getattr(e, "name", None) != "QA_TARGET_ID"
+                    ] + [
+                        k8s.client.V1EnvVar(name="QA_TARGET_ID", value=target_id)
                     ]
                 if enabled_mcp_servers:
                     # #1031 — Slice C of the MCP visibility epic. Comma-

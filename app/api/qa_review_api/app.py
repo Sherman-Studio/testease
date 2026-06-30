@@ -519,10 +519,22 @@ def create_app(
     if store is None:
         store = connect(settings.qa_store_url, settings.qa_store_db)
     if run_control is None:
-        run_control = K8sRunControl(
-            namespace=settings.sandbox_namespace,
-            cronjob_name=settings.qa_cronjob_name,
-        )
+        if settings.run_backend == "local":
+            # Local-first: launch the harness as a sibling Docker container
+            # (one-shot, attended) instead of a k8s Job. The BYOK Claude token
+            # is resolved from the vault/env at run time and injected.
+            from .local_runs import LocalRunControl  # noqa: PLC0415
+            run_control = LocalRunControl(
+                settings=settings,
+                harness_image=settings.harness_image,
+                network=settings.run_network,
+                token_resolver=lambda: get_llm_token(store, DEFAULT_TENANT),
+            )
+        else:
+            run_control = K8sRunControl(
+                namespace=settings.sandbox_namespace,
+                cronjob_name=settings.qa_cronjob_name,
+            )
 
     app = FastAPI(
         title="Test Ease",
@@ -752,6 +764,12 @@ def create_app(
         ``docker compose`` stack has no cluster, so they can't launch here. The
         UI calls this to explain that **up front** rather than letting the
         operator complete the whole funnel and hit a cryptic error at Launch."""
+        # Backends that know their own readiness (the local Docker backend
+        # checks the socket, the harness image, and a configured token) report
+        # it directly; the k8s backend falls back to the active-run probe.
+        if hasattr(run_control, "availability"):
+            available, reason = run_control.availability()
+            return {"available": available, "reason": reason}
         try:
             run_control.active_run()  # cheapest probe that exercises cluster access
             return {"available": True, "reason": None}
@@ -872,9 +890,13 @@ def create_app(
         # operator's Claude Code Max OAuth token (Secret
         # qa-claude-code-credentials). Pre-check that Secret unconditionally
         # so the operator sees a clean 422 instead of a half-created Job
-        # that 401s at pod-start.
+        # that 401s at pod-start. This pre-check is about the *cluster* Secret;
+        # the local backend resolves its BYOK token differently and gates on it
+        # via availability(), so skip the k8s Secret check there.
         try:
-            if not run_control.secret_exists(settings.qa_claude_code_secret_name):
+            if settings.run_backend != "local" and not run_control.secret_exists(
+                settings.qa_claude_code_secret_name,
+            ):
                 raise HTTPException(
                     status_code=422,
                     detail=(
@@ -925,6 +947,7 @@ def create_app(
                 run_notes=req.run_notes,
                 mandatory_action_ids=req.mandatory_action_ids,
                 target_url=req.target_url,
+                target_id=req.target_id,
                 enabled_mcp_servers=enabled_servers,
                 capability_env=capability_env,
                 # #1821 — an omitted pod_count forwards as 1 (single-pod, the

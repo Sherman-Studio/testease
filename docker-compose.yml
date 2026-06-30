@@ -82,13 +82,26 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       QA_CREDENTIAL_KEY: "${QA_CREDENTIAL_KEY:-}"
+      # Local run execution: the "Launch" button starts the harness as a sibling
+      # container over the mounted Docker socket (no cluster needed), joined to
+      # this compose project's network so it reaches `atlas`.
+      QA_RUN_BACKEND: "${QA_RUN_BACKEND:-local}"
+      QA_HARNESS_IMAGE: "${QA_HARNESS_IMAGE:-testease-harness}"
+      QA_RUN_NETWORK: "${QA_RUN_NETWORK:-testease_default}"
+    volumes:
+      # Docker-out-of-docker: lets the control room launch the harness container
+      # for a local run. Local-dev convenience only — the cluster deployment
+      # uses the k8s backend and never mounts this.
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       atlas:
         condition: service_healthy
 
   # ── Persona harness — on-demand batch run, not a service ──────────────
-  # `docker compose run --rm harness` (or `--profile run up harness`).
+  # The "Launch" button (QA_RUN_BACKEND=local) runs this image as a sibling
+  # container; you can also `docker compose run --rm harness` by hand.
   harness:
+    image: testease-harness
     build:
       context: .
       dockerfile: harness/Dockerfile
