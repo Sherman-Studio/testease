@@ -134,6 +134,10 @@ def test_trigger_launches_harness_with_personas_and_env():
     assert env["QA_ENABLED_MCPS"] == "email,openapi"
     assert env["QA_OPENAPI_URL"] == "https://acme.test/openapi.json"
     assert env["QA_CREDENTIAL_KEY"] == "fernet-key"
+    # Results go to the Mongo store (the control room reads them), keyed to the
+    # same run id we track the container by.
+    assert env["QA_SINK"] == "atlas"
+    assert env["QA_RUN_ID"] == out["run_id"]
     assert call["labels"][_RUN_LABEL] == out["run_id"]
 
 
