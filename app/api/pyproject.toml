@@ -16,6 +16,10 @@ dependencies = [
     # here so the Q&A path works in deploy. Keep the version floor
     # loose; the SDK is API-stable for the messages.create surface.
     "anthropic>=0.39",
+    # Local run backend (LocalRunControl) launches the harness as a sibling
+    # container over the Docker socket on the local-first compose stack. Only
+    # the `local` backend imports it; the cluster deploy uses kubernetes above.
+    "docker>=7",
     "qa-store",
 ]
 

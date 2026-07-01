@@ -55,7 +55,7 @@ COPY app/api/qa_review_api ./qa_review_api
 # this list in sync with pyproject.toml's [project.dependencies].
 RUN pip install --no-deps . \
     && pip install "fastapi>=0.110" "uvicorn[standard]>=0.27" "httpx>=0.27" \
-        "kubernetes>=29" "anthropic>=0.39"
+        "kubernetes>=29" "anthropic>=0.39" "docker>=7"
 
 # The built SPA from stage 1 — FastAPI serves these static files at /.
 COPY --from=web /web/dist ./static
