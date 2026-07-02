@@ -130,6 +130,10 @@ class LocalRunControl:
             "QA_MONGODB_URL": s.qa_store_url,
             "QA_STORE_DB": s.qa_store_db,
             "QA_LLM_BACKEND": "claude-code",
+            # Write results to the Mongo store (the control room reads them) —
+            # NOT the default file sink, which writes to /app (root-owned; the
+            # non-root run user can't) and never reaches the UI.
+            "QA_SINK": "atlas",
             "QA_EMBEDDING_PROVIDER": getattr(s, "embedding_provider", "local") or "local",
             # Mirror the k8s pod: a writable HOME on the world-writable /tmp, so
             # the non-root run user (below) has somewhere for the claude CLI's
@@ -175,6 +179,9 @@ class LocalRunControl:
             target_url=target_url, enabled_mcp_servers=enabled_mcp_servers,
             capability_env=capability_env, target_id=target_id,
         )
+        # Key the store's run doc to the same id we track the container by, so
+        # the UI's active-run badge links straight to this run's detail.
+        env["QA_RUN_ID"] = run_id
         log.info("local run %s: launching harness container (%d persona(s))",
                  run_id, len(personas))
         client.containers.run(
